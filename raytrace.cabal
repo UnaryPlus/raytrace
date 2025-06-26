@@ -58,7 +58,7 @@ executable raytrace
 
     -- Modules included in this executable, other than Main.
     other-modules:
-        Graphics.Ray, Graphics.Ray.Core, Graphics.Ray.Geometry, Graphics.Ray.SceneObject, Graphics.Ray.Texture, Graphics.Ray.Material, Graphics.Ray.Noise
+        Graphics.Ray, Graphics.Ray.Core, Graphics.Ray.Geometry, Graphics.Ray.Texture, Graphics.Ray.Material, Graphics.Ray.Noise
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:

@@ -99,3 +99,11 @@ boxHull = foldl' boxJoin (V3 (infinity, -infinity) (infinity, -infinity) (infini
 
 longestDim :: Box -> Dim
 longestDim = argMax . fmap size
+
+data HitRecord = HitRecord
+  { hr_t :: Double
+  , hr_point :: Point3
+  , hr_normal :: Vec3
+  , hr_frontFace :: Bool
+  , hr_uv :: V2 Double
+  }

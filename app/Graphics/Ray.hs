@@ -6,7 +6,7 @@ module Graphics.Ray where
 
 import Graphics.Ray.Core
 import Graphics.Ray.Material
-import Graphics.Ray.SceneObject
+import Graphics.Ray.Geometry
 
 import Linear (V2(V2), V3(V3), (*^), (^*), normalize, cross, (^/), zero)
 import System.Random (StdGen, random, splitGen)
@@ -48,8 +48,8 @@ defaultCameraSettings = CameraSettings
   }
 
 -- TODO: modify to return seed
-raytrace :: CameraSettings -> SceneObject -> StdGen -> A.Matrix D Color
-raytrace (CameraSettings {..}) (SceneObject _ hitWorld) seed = let
+raytrace :: CameraSettings -> Geometry Material -> StdGen -> A.Matrix D Color
+raytrace (CameraSettings {..}) (Geometry _ hitWorld) seed = let
   imageHeight = ceiling (fromIntegral cs_imageWidth / cs_aspectRatio)
   viewportHeight = cs_focusDist * tan (cs_vfov / 2) * 2
   viewportWidth = viewportHeight * fromIntegral cs_imageWidth / fromIntegral imageHeight

@@ -6,7 +6,6 @@ module Main where
 
 import Graphics.Ray.Core
 import Graphics.Ray.Material
-import Graphics.Ray.SceneObject
 import Graphics.Ray.Texture
 import Graphics.Ray.Geometry
 import Graphics.Ray
@@ -31,11 +30,11 @@ metalTest = let
   materialRight = metal 1.0 (constantTexture (V3 0.8 0.6 0.2))
 
   world = group 
-    [ geometryObject materialGround (sphere (V3 0 (-100.5) (-1)) 100)
-    , geometryObject materialCenter (sphere (V3 0 0 (-1.2)) 0.5) 
-    , geometryObject materialLeft (sphere (V3 (-1) 0 (-1)) 0.5) 
-    , geometryObject materialBubble (sphere (V3 (-1) 0 (-1)) 0.4) 
-    , geometryObject materialRight (sphere (V3 1 0 (-1)) 0.5) 
+    [ materialGround <$ sphere (V3 0 (-100.5) (-1)) 100
+    , materialCenter <$ sphere (V3 0 0 (-1.2)) 0.5
+    , materialLeft <$ sphere (V3 (-1) 0 (-1)) 0.5 
+    , materialBubble <$ sphere (V3 (-1) 0 (-1)) 0.4
+    , materialRight <$ sphere (V3 1 0 (-1)) 0.5
     ]
 
   settings = defaultCameraSettings 
@@ -60,8 +59,8 @@ checkerTest = let
   checker = lambertian (checkerTexture 0.32 (V3 0.2 0.3 0.1) (V3 0.9 0.9 0.9))
 
   world = group
-    [ geometryObject checker (sphere (V3 0 (-10) 0) 10)
-    , geometryObject checker (sphere (V3 0 10 0) 10)
+    [ checker <$ sphere (V3 0 (-10) 0) 10
+    , checker <$ sphere (V3 0 10 0) 10
     ]
   
   settings = defaultCameraSettings
@@ -85,8 +84,8 @@ noiseTest = let
   ballMaterial = lambertian (marbleTexture 4)
 
   world = group 
-    [ geometryObject groundMaterial (sphere (V3 0 (-1000) 0) 1000)
-    , geometryObject ballMaterial (sphere (V3 0 2 0) 2)
+    [ groundMaterial <$ sphere (V3 0 (-1000) 0) 1000
+    , ballMaterial <$ sphere (V3 0 2 0) 2
     ]
   
   settings = defaultCameraSettings
@@ -112,13 +111,13 @@ demo1 = let
   materialMirror = mirror (constantTexture (V3 0.7 0.6 0.5))
 
   bigSpheres =
-    [ geometryObject materialGround (sphere (V3 0 (-1000) 0) 1000)
-    , geometryObject materialGlass (sphere (V3 0 1 0) 1)
-    , geometryObject materialDiffuse (sphere (V3 (-4) 1 0) 1)
-    , geometryObject materialMirror (sphere (V3 4 1 0) 1)
+    [ materialGround <$ sphere (V3 0 (-1000) 0) 1000
+    , materialGlass <$ sphere (V3 0 1 0) 1
+    , materialDiffuse <$ sphere (V3 (-4) 1 0) 1
+    , materialMirror <$ sphere (V3 4 1 0) 1
     ]
 
-  genWorld :: State StdGen SceneObject
+  genWorld :: State StdGen (Geometry Material)
   genWorld = do
     fmap (bvhTree . autoTree . (bigSpheres ++) . concat) $ forM (liftA2 (,) [-11..10] [-11..10]) $ \(a, b) -> do
       offsetX <- state (randomR (0, 0.9))
@@ -136,7 +135,7 @@ demo1 = let
             color <- state (randomR (0.5, 1))
             pure (metal fuzz (constantTexture color))
           else pure materialGlass
-        pure [ geometryObject mat (sphere center 0.2) ]
+        pure [ mat <$ sphere center 0.2 ]
   
   settings = defaultCameraSettings
     { cs_aspectRatio = 16 / 9

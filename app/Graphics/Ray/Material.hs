@@ -5,7 +5,6 @@ module Graphics.Ray.Material
   ) where
 
 import Graphics.Ray.Core
-import Graphics.Ray.Geometry
 import Graphics.Ray.Texture
 
 import Linear (V3(V3), zero, normalize, dot, quadrance, (*^))
