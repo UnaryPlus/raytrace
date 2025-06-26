@@ -69,11 +69,37 @@ checkerTest = let
     , cs_imageWidth = 400
     , cs_samplesPerPixel = 100
     , cs_maxRecursionDepth = 50
+    , cs_background = sky
     , cs_vfov = degrees 20
     , cs_center = V3 13 2 3
     , cs_lookAt = V3 0 0 0
     }
 
+  in do
+  seed <- newStdGen
+  writeImageRTW "test_image.png" $ raytrace settings world seed
+
+noiseTest :: IO ()
+noiseTest = let
+  groundMaterial = lambertian (noiseTexture 4)
+  ballMaterial = lambertian (marbleTexture 4)
+
+  world = group 
+    [ geometryObject groundMaterial (sphere (V3 0 (-1000) 0) 1000)
+    , geometryObject ballMaterial (sphere (V3 0 2 0) 2)
+    ]
+  
+  settings = defaultCameraSettings
+    { cs_aspectRatio = 16 / 9
+    , cs_imageWidth = 400
+    , cs_samplesPerPixel = 100
+    , cs_maxRecursionDepth = 50
+    , cs_background = sky
+    , cs_vfov = degrees 20
+    , cs_center = V3 13 2 3
+    , cs_lookAt = V3 0 0 0
+    }
+    
   in do
   seed <- newStdGen
   writeImageRTW "test_image.png" $ raytrace settings world seed
@@ -131,4 +157,4 @@ demo1 = let
   writeImageRTW "test_image.png" $ raytrace settings world seed'
 
 main :: IO ()
-main = demo1
+main = noiseTest
