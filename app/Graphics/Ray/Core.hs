@@ -64,6 +64,12 @@ midpoint (a, b) = (a + b) / 2
 inInterval :: Interval -> Double -> Bool
 inInterval (tmin, tmax) t = tmin < t && t < tmax
 
+padInterval :: Double -> Interval -> Interval
+padInterval padding (tmin, tmax) = (tmin - padding, tmax + padding)
+
+shiftInterval :: Double -> Interval -> Interval
+shiftInterval x (tmin, tmax) = (tmin + x, tmax + x)
+
 -- private
 isect :: Interval -> Interval -> Maybe Interval
 isect (a, b) (c, d) = let
@@ -96,6 +102,12 @@ boxJoin = liftA2 (\(min1, max1) (min2, max2) -> (min min1 min2, max max1 max2))
 
 boxHull :: [Box] -> Box
 boxHull = foldl' boxJoin (V3 (infinity, -infinity) (infinity, -infinity) (infinity, -infinity))
+
+padBox :: Double -> Box -> Box
+padBox padding = fmap (padInterval padding)
+
+shiftBox :: Vec3 -> Box -> Box
+shiftBox = liftA2 shiftInterval
 
 longestDim :: Box -> Dim
 longestDim = argMax . fmap size

@@ -1,10 +1,12 @@
 {-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE RecordWildCards #-}
 module Graphics.Ray.Geometry where
 
 import Graphics.Ray.Core
 
-import Linear (V2(V2), V3(V3), dot, quadrance, (*^), (^/))
+import Linear (V2(V2), V3(V3), dot, quadrance, (*^), (^/), cross, norm, M44, inv44, (!*), V4 (V4))
+import qualified Linear.V4 as V4
 import Control.Monad (guard)
 import Control.Applicative ((<|>))
 import Data.List (sortOn)
@@ -67,7 +69,54 @@ sphereUV (V3 x y z) = V2 u v
     u = atan2 x z / (2 * pi) + 0.5
     v = acos (-y) / pi 
 
+parallelogram :: Point3 -> Vec3 -> Vec3 -> Geometry ()
+parallelogram q u v = let
+  cp = cross u v
+  area = norm cp
+  normal = cp ^/ area
+  normalS = normal ^/ area
+  n_dot_q = dot normal q
 
+  box1 = fromCorners q (q + u + v)
+  box2 = fromCorners (q + u) (q + v)
+  bbox = padBox 0.0001 (boxJoin box1 box2) -- TODO: move out into constant
+  
+  hitParallelogram (Ray orig dir) bounds = do
+    let denom = dot normal dir
+    guard (abs denom > 1e-8) -- TODO: move out into constant
+    let t = (n_dot_q - dot normal orig) / denom
+    guard (inInterval bounds t)
+    let p = orig + t *^ dir
+    let p_rel = p - q
+    let a = normalS `dot` (p_rel `cross` v)
+    let b = normalS `dot` (u `cross` p_rel)
+    guard (0 <= a && a <= 1 && 0 <= b && b <= 1)
+    let frontFace = denom < 0
+
+    let hit = HitRecord
+          { hr_t = t
+          , hr_point = p
+          , hr_normal = if frontFace then normal else -normal
+          , hr_frontFace = frontFace
+          , hr_uv = V2 a b
+          }
+    Just (hit, ())
+
+  in Geometry bbox hitParallelogram 
+
+cuboid :: Box -> Geometry ()
+cuboid (V3 (xmin, xmax) (ymin, ymax) (zmin, zmax)) = let
+  dx = V3 (xmax - xmin) 0 0
+  dy = V3 0 (ymax - ymin) 0
+  dz = V3 0 0 (zmax - zmin)
+  in group 
+    [ parallelogram (V3 xmin ymin zmax) dx dy -- front
+    , parallelogram (V3 xmax ymin zmin) (-dx) dy -- back
+    , parallelogram (V3 xmin ymin zmin) dz dy -- left
+    , parallelogram (V3 xmax ymin zmax) (-dz) dy -- right
+    , parallelogram (V3 xmin ymax zmax) dx (-dz) -- top
+    , parallelogram (V3 xmin ymin zmin) dx dz -- bottom
+    ]
 
 group :: [Geometry a] -> Geometry a
 group obs = let
@@ -112,4 +161,51 @@ autoTree = \case
     (left, right) = splitAt (length obs `div` 2) obs'
     in Node (autoTree left) (autoTree right)
   
+translate :: Vec3 -> Geometry a -> Geometry a
+translate v (Geometry bbox hitObj) =
+  Geometry (shiftBox v bbox) $ \(Ray orig dir) ival -> do
+    let ray' = Ray (orig - v) dir
+    (hit, mat) <- hitObj ray' ival
+    Just (hit { hr_point = hr_point hit + v }, mat)
 
+-- TODO: more efficient definitions?
+rotateX :: Double -> Geometry a -> Geometry a
+rotateX angle = 
+  let c = cos angle; s = sin angle in
+  affineTransform $ V4
+    (V4 1 0 0 0)
+    (V4 0 c (-s) 0)
+    (V4 0 s c 0)
+    (V4 0 0 0 1)
+
+rotateY :: Double -> Geometry a -> Geometry a
+rotateY angle =
+  let c = cos angle; s = sin angle in
+  affineTransform $ V4
+    (V4 c 0 s 0)
+    (V4 0 1 0 0)
+    (V4 (-s) 0 c 0)
+    (V4 0 0 0 1)
+
+rotateZ :: Double -> Geometry a -> Geometry a
+rotateZ angle = 
+  let c = cos angle; s = sin angle in
+  affineTransform $ V4
+    (V4 c (-s) 0 0)
+    (V4 s c 0 0)
+    (V4 0 0 1 0)
+    (V4 0 0 0 1)
+
+-- private
+dropLast :: V4 a -> V3 a
+dropLast (V4 x y z _) = V3 x y z
+
+affineTransform :: M44 Double -> Geometry a -> Geometry a
+affineTransform m (Geometry bbox hitObj) = let
+  m34 = dropLast m
+  inv_m = dropLast (inv44 m)
+  bbox' = undefined -- TODO
+  in Geometry bbox' $ \(Ray orig dir) ival -> do
+    let ray' = Ray (inv_m !* V4.point orig) (inv_m !* V4.vector dir)
+    (hit@HitRecord{..}, mat) <- hitObj ray' ival
+    Just (hit { hr_point = m34 !* V4.point hr_point, hr_normal = m34 !* V4.vector hr_normal }, mat)

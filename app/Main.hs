@@ -15,6 +15,7 @@ import System.Random (StdGen, newStdGen, randomR, random)
 import Control.Monad.State (State, runState, state)
 import Control.Monad (forM)
 import Control.Applicative (liftA2)
+import Data.Massiv.Array (Matrix, U)
 
 sky :: Ray -> Color
 sky (Ray _ (normalize -> V3 _ y _)) = 
@@ -103,6 +104,46 @@ noiseTest = let
   seed <- newStdGen
   writeImageRTW "test_image.png" $ raytrace settings world seed
 
+quadTest :: IO ()
+quadTest = let
+  red = lambertian (constantTexture (V3 1.0 0.2 0.2))
+  green = lambertian (constantTexture (V3 0.2 1.0 0.2))
+  blue = lambertian (constantTexture (V3 0.2 0.2 1.0))
+  orange = lambertian (constantTexture (V3 1.0 0.5 0.0))
+  teal = lambertian (constantTexture (V3 0.2 0.8 0.8))
+
+  world = group
+    [ red <$ parallelogram (V3 (-3) (-2) 5) (V3 0 0 (-4)) (V3 0 4 0) 
+    , green <$ parallelogram (V3 (-2) (-2) 0) (V3 4 0 0) (V3 0 4 0)
+    , blue <$ parallelogram (V3 3 (-2) 1) (V3 0 0 4) (V3 0 4 0)
+    , orange <$ parallelogram (V3 (-2) 3 1) (V3 4 0 0) (V3 0 0 4)
+    , teal <$ parallelogram (V3 (-2) (-3) 5) (V3 4 0 0) (V3 0 0 (-4))
+    ]
+  
+  settings = defaultCameraSettings
+    { cs_aspectRatio = 1
+    , cs_imageWidth = 400
+    , cs_samplesPerPixel = 100
+    , cs_maxRecursionDepth = 50
+    , cs_background = sky
+    , cs_vfov = degrees 80
+    , cs_center = V3 0 0 9
+    , cs_lookAt = V3 0 0 0
+    }
+
+  in do
+  seed <- newStdGen
+  writeImageRTW "test_image.png" $ raytrace settings world seed
+
+cuboidTest :: IO ()
+cuboidTest = do
+  globe <- readImage "images/earthmap.jpg"
+  let globeMaterial = lambertian (imageTexture (globe :: Matrix U Color))
+  let object = globeMaterial <$ cuboid (fromCorners (-V3 1 2 0.5) (V3 1 2 0.5))
+  let world = translate (V3 0 0 (-3)) (rotateX (degrees (-60)) object)
+  let settings = defaultCameraSettings { cs_imageWidth = 300 }
+  writeImage "test_image.png" . raytrace settings world =<< newStdGen
+
 demo1 :: IO ()
 demo1 = let
   materialGround = lambertian (constantTexture (V3 0.5 0.5 0.5))
@@ -155,5 +196,36 @@ demo1 = let
   let (world, seed') = runState genWorld seed
   writeImageRTW "test_image.png" $ raytrace settings world seed'
 
+cornellBox :: IO ()
+cornellBox = let
+  red = lambertian (constantTexture (V3 0.65 0.05 0.05))
+  white = lambertian (constantTexture (V3 0.73 0.73 0.73))
+  green = lambertian (constantTexture (V3 0.12 0.45 0.15))
+  light = lightSource (constantTexture (V3 15 15 15))
+
+  world = group
+    [ green <$ parallelogram (V3 555 0 0) (V3 0 555 0) (V3 0 0 555)
+    , red <$ parallelogram (V3 0 0 0) (V3 0 555 0) (V3 0 0 555)
+    , light <$ parallelogram (V3 343 554 332) (V3 (-130) 0 0) (V3 0 0 (-105))
+    , white <$ parallelogram (V3 0 0 0) (V3 555 0 0) (V3 0 0 555)
+    , white <$ parallelogram (V3 555 555 555) (V3 (-555) 0 0) (V3 0 0 (-555))
+    , white <$ parallelogram (V3 0 0 555) (V3 555 0 0) (V3 0 555 0)
+    , translate (V3 265 0 295) $ rotateY (degrees 15) $ white <$ cuboid (fromCorners (V3 0 0 0) (V3 165 330 165))
+    , translate (V3 130 0 65) $ rotateY (degrees (-18)) $ white <$ cuboid (fromCorners (V3 0 0 0) (V3 165 165 165))
+    ]
+
+  settings = defaultCameraSettings
+    { cs_aspectRatio = 1.0
+    , cs_imageWidth = 600
+    , cs_samplesPerPixel = 200
+    , cs_maxRecursionDepth = 50
+    , cs_background = const (V3 0 0 0)
+    , cs_vfov = degrees 40
+    , cs_center = V3 278 278 (-800)
+    , cs_lookAt = V3 278 278 0
+    }
+
+  in writeImageRTW "test_image.png" . raytrace settings world =<< newStdGen
+
 main :: IO ()
-main = noiseTest
+main = cornellBox

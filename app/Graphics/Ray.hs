@@ -42,7 +42,7 @@ defaultCameraSettings = CameraSettings
   , cs_imageWidth = 100
   , cs_samplesPerPixel = 10
   , cs_maxRecursionDepth = 10
-  , cs_background = const (V3 0 0 0)
+  , cs_background = const (V3 1 1 1)
   , cs_defocusAngle = 0.0
   , cs_focusDist = 10.0
   }
