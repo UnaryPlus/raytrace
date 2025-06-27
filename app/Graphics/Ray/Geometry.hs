@@ -4,6 +4,8 @@
 module Graphics.Ray.Geometry where
 
 import Graphics.Ray.Core
+import Graphics.Ray.Texture
+import Graphics.Ray.Material
 
 import Linear (V2(V2), V3(V3), dot, quadrance, (*^), (^/), cross, norm, M44, inv44, (!*), V4 (V4))
 import qualified Linear.V4 as V4
@@ -118,6 +120,36 @@ cuboid (V3 (xmin, xmax) (ymin, ymax) (zmin, zmax)) = let
     , parallelogram (V3 xmin ymin zmin) dx dz -- bottom
     ]
 
+-- TODO: rename?
+-- ASSUMES CONVEXITY
+constantMedium :: Double -> Texture -> Geometry () -> Geometry Material
+constantMedium density tex (Geometry bbox hitObj) = let
+  negInvDensity = -(1 / density)
+  mat = isotropic tex
+
+  hitMedium ray@(Ray orig dir) (tmin, tmax) = do
+    (hit1, ()) <- hitObj ray (-infinity, infinity)
+    (hit2, ()) <- hitObj ray (hr_t hit1, infinity)
+    let t1 = max tmin (hr_t hit1)
+    let t2 = min tmax (hr_t hit2)
+    guard (t1 < t2)
+    let rayScale = norm dir
+    let inDist = (t2 - t1) * rayScale
+    let hitDist = negInvDensity * log undefined -- TODO: replace undefined with random double
+    guard (hitDist < inDist)
+    let t = t1 + hitDist / rayScale
+
+    let hit = HitRecord
+          { hr_t = t
+          , hr_point = orig + t *^ dir
+          , hr_normal = undefined
+          , hr_frontFace = undefined
+          , hr_uv = hr_uv hit1
+          }
+    Just (hit, mat)
+
+  in Geometry bbox hitMedium
+
 group :: [Geometry a] -> Geometry a
 group obs = let
   bbox = boxHull (map boundingBox obs)
@@ -160,52 +192,54 @@ autoTree = \case
     obs' = sortOn (midpoint . component d . boundingBox) obs
     (left, right) = splitAt (length obs `div` 2) obs'
     in Node (autoTree left) (autoTree right)
-  
-translate :: Vec3 -> Geometry a -> Geometry a
-translate v (Geometry bbox hitObj) =
-  Geometry (shiftBox v bbox) $ \(Ray orig dir) ival -> do
-    let ray' = Ray (orig - v) dir
-    (hit, mat) <- hitObj ray' ival
-    Just (hit { hr_point = hr_point hit + v }, mat)
 
--- TODO: more efficient definitions?
-rotateX :: Double -> Geometry a -> Geometry a
-rotateX angle = 
-  let c = cos angle; s = sin angle in
-  affineTransform $ V4
-    (V4 1 0 0 0)
-    (V4 0 c (-s) 0)
-    (V4 0 s c 0)
-    (V4 0 0 0 1)
+translate :: Vec3 -> M44 Double
+translate (V3 x y z) = V4
+  (V4 1 0 0 x)
+  (V4 0 1 0 y)
+  (V4 0 0 1 z)
+  (V4 0 0 0 1)
 
-rotateY :: Double -> Geometry a -> Geometry a
-rotateY angle =
-  let c = cos angle; s = sin angle in
-  affineTransform $ V4
-    (V4 c 0 s 0)
-    (V4 0 1 0 0)
-    (V4 (-s) 0 c 0)
-    (V4 0 0 0 1)
+rotateX :: Double -> M44 Double
+rotateX angle = V4
+  (V4 1 0 0 0)
+  (V4 0 c (-s) 0)
+  (V4 0 s c 0)
+  (V4 0 0 0 1)
+  where
+    c = cos angle
+    s = sin angle
 
-rotateZ :: Double -> Geometry a -> Geometry a
-rotateZ angle = 
-  let c = cos angle; s = sin angle in
-  affineTransform $ V4
-    (V4 c (-s) 0 0)
-    (V4 s c 0 0)
-    (V4 0 0 1 0)
-    (V4 0 0 0 1)
+rotateY :: Double -> M44 Double
+rotateY angle = V4
+  (V4 c 0 s 0)
+  (V4 0 1 0 0)
+  (V4 (-s) 0 c 0)
+  (V4 0 0 0 1)
+  where 
+    c = cos angle
+    s = sin angle
+
+rotateZ :: Double -> M44 Double
+rotateZ angle = V4
+  (V4 c (-s) 0 0)
+  (V4 s c 0 0)
+  (V4 0 0 1 0)
+  (V4 0 0 0 1)
+  where
+    c = cos angle
+    s = sin angle
 
 -- private
 dropLast :: V4 a -> V3 a
 dropLast (V4 x y z _) = V3 x y z
 
-affineTransform :: M44 Double -> Geometry a -> Geometry a
-affineTransform m (Geometry bbox hitObj) = let
+transform :: M44 Double -> Geometry a -> Geometry a
+transform m (Geometry _ hitObj) = let
   m34 = dropLast m
   inv_m = dropLast (inv44 m)
   bbox' = undefined -- TODO
   in Geometry bbox' $ \(Ray orig dir) ival -> do
     let ray' = Ray (inv_m !* V4.point orig) (inv_m !* V4.vector dir)
-    (hit@HitRecord{..}, mat) <- hitObj ray' ival
+    (hit@(HitRecord {..}), mat) <- hitObj ray' ival
     Just (hit { hr_point = m34 !* V4.point hr_point, hr_normal = m34 !* V4.vector hr_normal }, mat)

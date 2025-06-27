@@ -10,7 +10,7 @@ import Graphics.Ray.Texture
 import Graphics.Ray.Geometry
 import Graphics.Ray
 
-import Linear (V3(V3), (*^), normalize, norm)
+import Linear (V3(V3), (*^), normalize, norm, (!*!))
 import System.Random (StdGen, newStdGen, randomR, random)
 import Control.Monad.State (State, runState, state)
 import Control.Monad (forM)
@@ -140,7 +140,7 @@ cuboidTest = do
   globe <- readImage "images/earthmap.jpg"
   let globeMaterial = lambertian (imageTexture (globe :: Matrix U Color))
   let object = globeMaterial <$ cuboid (fromCorners (-V3 1 2 0.5) (V3 1 2 0.5))
-  let world = translate (V3 0 0 (-3)) (rotateX (degrees (-60)) object)
+  let world = transform (translate (V3 0 0 (-3)) !*! rotateX (degrees 60)) object
   let settings = defaultCameraSettings { cs_imageWidth = 300 }
   writeImage "test_image.png" . raytrace settings world =<< newStdGen
 
@@ -210,8 +210,8 @@ cornellBox = let
     , white <$ parallelogram (V3 0 0 0) (V3 555 0 0) (V3 0 0 555)
     , white <$ parallelogram (V3 555 555 555) (V3 (-555) 0 0) (V3 0 0 (-555))
     , white <$ parallelogram (V3 0 0 555) (V3 555 0 0) (V3 0 555 0)
-    , translate (V3 265 0 295) $ rotateY (degrees 15) $ white <$ cuboid (fromCorners (V3 0 0 0) (V3 165 330 165))
-    , translate (V3 130 0 65) $ rotateY (degrees (-18)) $ white <$ cuboid (fromCorners (V3 0 0 0) (V3 165 165 165))
+    , transform (translate (V3 265 0 295) !*! rotateY (degrees 15)) $ white <$ cuboid (fromCorners (V3 0 0 0) (V3 165 330 165))
+    , transform (translate (V3 130 0 65) !*! rotateY (degrees (-18))) $ white <$ cuboid (fromCorners (V3 0 0 0) (V3 165 165 165))
     ]
 
   settings = defaultCameraSettings
