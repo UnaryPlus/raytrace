@@ -228,4 +228,9 @@ cornellBox = let
   in writeImageRTW "test_image.png" . raytrace settings world =<< newStdGen
 
 main :: IO ()
-main = cornellBox
+main = do
+  putStrLn "branch: monadic"
+  let red = lambertian (constantTexture (V3 1 0 0))
+  let world = red <$ sphere (V3 0 0 (-1)) 0.5
+  let settings = defaultCameraSettings
+  writeImage "test_image.png" . raytrace settings world =<< newStdGen

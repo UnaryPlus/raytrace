@@ -7,17 +7,21 @@ import Graphics.Ray.Core
 import Graphics.Ray.Texture
 import Graphics.Ray.Material
 
-import Linear (V2(V2), V3(V3), dot, quadrance, (*^), (^/), cross, norm, M44, inv44, (!*), V4 (V4))
+import Linear (V2(V2), V3(V3), dot, quadrance, (*^), (^/), cross, norm, M44, inv44, (!*), V4(V4))
 import qualified Linear.V4 as V4
-import Control.Monad (guard)
+import System.Random (StdGen, random)
+import Control.Monad.Trans.Maybe (MaybeT(MaybeT), runMaybeT)
+import Control.Monad.State (State, state)
+import Control.Monad (guard, foldM)
 import Control.Applicative ((<|>))
 import Data.List (sortOn)
+import Data.Bifunctor (first)
 
-data Geometry a = Geometry Box (Ray -> Interval -> Maybe (HitRecord, a))
+data Geometry a = Geometry Box (Ray -> Interval -> State StdGen (Maybe (HitRecord, a)))
 
 instance Functor Geometry where
   fmap :: (a -> b) -> Geometry a -> Geometry b
-  fmap f (Geometry bbox hit) = Geometry bbox (fmap (fmap (fmap (fmap f))) hit) -- lol
+  fmap f (Geometry bbox hit) = Geometry bbox (fmap (fmap (fmap (fmap (fmap f)))) hit) -- lol
   -- TODO: is this implementation inefficient?
 
 boundingBox :: Geometry a -> Box
@@ -28,7 +32,7 @@ sphere center radius = let
   diag = V3 radius radius radius
   bbox = fromCorners (center - diag) (center + diag)
 
-  hitSphere (Ray orig dir) bounds = do
+  hitSphere (Ray orig dir) bounds = pure $ do
     let oc = center - orig
     let a = quadrance dir
     let h = dot dir oc 
@@ -83,7 +87,7 @@ parallelogram q u v = let
   box2 = fromCorners (q + u) (q + v)
   bbox = padBox 0.0001 (boxJoin box1 box2) -- TODO: move out into constant
   
-  hitParallelogram (Ray orig dir) bounds = do
+  hitParallelogram (Ray orig dir) bounds = pure $ do
     let denom = dot normal dir
     guard (abs denom > 1e-8) -- TODO: move out into constant
     let t = (n_dot_q - dot normal orig) / denom
@@ -127,15 +131,16 @@ constantMedium density tex (Geometry bbox hitObj) = let
   negInvDensity = -(1 / density)
   mat = isotropic tex
 
-  hitMedium ray@(Ray orig dir) (tmin, tmax) = do
-    (hit1, ()) <- hitObj ray (-infinity, infinity)
-    (hit2, ()) <- hitObj ray (hr_t hit1, infinity)
+  hitMedium ray@(Ray orig dir) (tmin, tmax) = runMaybeT $ do
+    (hit1, ()) <- MaybeT (hitObj ray (-infinity, infinity))
+    (hit2, ()) <- MaybeT (hitObj ray (hr_t hit1, infinity))
     let t1 = max tmin (hr_t hit1)
     let t2 = min tmax (hr_t hit2)
     guard (t1 < t2)
     let rayScale = norm dir
     let inDist = (t2 - t1) * rayScale
-    let hitDist = negInvDensity * log undefined -- TODO: replace undefined with random double
+    rand <- state random
+    let hitDist = negInvDensity * log rand
     guard (hitDist < inDist)
     let t = t1 + hitDist / rayScale
 
@@ -146,7 +151,7 @@ constantMedium density tex (Geometry bbox hitObj) = let
           , hr_frontFace = undefined
           , hr_uv = hr_uv hit1
           }
-    Just (hit, mat)
+    pure (hit, mat)
 
   in Geometry bbox hitMedium
 
@@ -156,10 +161,10 @@ group obs = let
   
   hitGroup ray (tmin, tmax) =
     let try (tmax', knownHit) (Geometry _ hitObj) =
-          case hitObj ray (tmin, tmax') of
+          flip fmap (hitObj ray (tmin, tmax')) $ \case
             Nothing -> (tmax', knownHit)
             Just (hit, mat) -> (hr_t hit, Just (hit, mat))
-    in snd (foldl try (tmax, Nothing) obs)
+    in snd <$> foldM try (tmax, Nothing) obs
   
   in Geometry bbox hitGroup
 
@@ -169,10 +174,10 @@ bvhNode (Geometry bboxLeft hitLeft) (Geometry bboxRight hitRight) = let
 
   hitBvhNode ray (tmin, tmax)
     | hitsBox bbox ray (tmin, tmax) = 
-      case hitLeft ray (tmin, tmax) of
+      hitLeft ray (tmin, tmax) >>= \case
         Nothing -> hitRight ray (tmin, tmax)
-        res@(Just (hit, _)) -> hitRight ray (tmin, hr_t hit) <|> res
-    | otherwise = Nothing
+        res@(Just (hit, _)) -> fmap (<|> res) (hitRight ray (tmin, hr_t hit))
+    | otherwise = pure Nothing
   
   in Geometry bbox hitBvhNode
 
@@ -239,7 +244,7 @@ transform m (Geometry _ hitObj) = let
   m34 = dropLast m
   inv_m = dropLast (inv44 m)
   bbox' = undefined -- TODO
-  in Geometry bbox' $ \(Ray orig dir) ival -> do
-    let ray' = Ray (inv_m !* V4.point orig) (inv_m !* V4.vector dir)
-    (hit@(HitRecord {..}), mat) <- hitObj ray' ival
-    Just (hit { hr_point = m34 !* V4.point hr_point, hr_normal = m34 !* V4.vector hr_normal }, mat)
+  in Geometry bbox' $ \(Ray orig dir) ival ->
+    let ray' = Ray (inv_m !* V4.point orig) (inv_m !* V4.vector dir) in
+    flip (fmap . fmap . first) (hitObj ray' ival) $ \hit@(HitRecord {..}) ->
+      hit { hr_point = m34 !* V4.point hr_point, hr_normal = m34 !* V4.vector hr_normal }

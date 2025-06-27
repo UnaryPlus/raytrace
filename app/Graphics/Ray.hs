@@ -90,7 +90,7 @@ raytrace (CameraSettings {..}) (Geometry _ hitWorld) seed = let
   rayColor depth ray
     | depth <= 0 = pure zero
     | otherwise =
-    case hitWorld ray (0.0001, infinity) of
+    hitWorld ray (0.0001, infinity) >>= \case
       Nothing -> pure (cs_background ray)
       Just (hit, Material mat) -> 
         mat ray hit >>= \case
