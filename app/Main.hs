@@ -231,6 +231,6 @@ main :: IO ()
 main = do
   putStrLn "branch: monadic"
   let red = lambertian (constantTexture (V3 1 0 0))
-  let world = red <$ sphere (V3 0 0 (-1)) 0.5
+  let world = transform (translate (V3 0 0 (-1))) (red <$ sphere (V3 0 0 0) 0.5)
   let settings = defaultCameraSettings { cs_samplesPerPixel = 5000 }
   writeImage "test_image.png" . raytrace settings world =<< newStdGen
