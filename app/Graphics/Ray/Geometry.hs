@@ -26,6 +26,9 @@ instance Functor m => Functor (Geometry m) where
   fmap f (Geometry bbox hit) = Geometry bbox (fmap (fmap (fmap (fmap (fmap f)))) hit) -- lol
   -- TODO: is this implementation inefficient?
 
+pureGeometry :: Applicative m => Geometry Identity a -> Geometry m a
+pureGeometry (Geometry bbox f) = Geometry bbox (\ray ival -> pure (runIdentity (f ray ival)))
+
 boundingBox :: Geometry m a -> Box
 boundingBox (Geometry b _) = b
 
@@ -87,11 +90,11 @@ parallelogram q u v = let
 
   box1 = fromCorners q (q + u + v)
   box2 = fromCorners (q + u) (q + v)
-  bbox = padBox 0.0001 (boxJoin box1 box2) -- TODO: move out into constant
+  bbox = padBox 0.0001 (boxJoin box1 box2)
   
   hitParallelogram (Ray orig dir) bounds = Identity $ do
     let denom = dot normal dir
-    guard (abs denom > 1e-8) -- TODO: move out into constant
+    guard (abs denom > 1e-8)
     let t = (n_dot_q - dot normal orig) / denom
     guard (inInterval bounds t)
     let p = orig + t *^ dir
@@ -126,7 +129,6 @@ cuboid (V3 (xmin, xmax) (ymin, ymax) (zmin, zmax)) = let
     , parallelogram (V3 xmin ymin zmin) dx dz -- bottom
     ]
 
--- TODO: rename?
 -- ASSUMES CONVEXITY
 constantMedium :: Double -> Texture -> Geometry Identity () -> Geometry (State StdGen) Material
 constantMedium density tex (Geometry bbox hitObj) = let
@@ -179,7 +181,7 @@ bvhNode (Geometry bboxLeft hitLeft) (Geometry bboxRight hitRight) = let
   bbox = boxJoin bboxLeft bboxRight
 
   hitBvhNode ray (tmin, tmax)
-    | hitsBox bbox ray (tmin, tmax) = 
+    | overlapsBox bbox ray (tmin, tmax) = 
       hitLeft ray (tmin, tmax) >>= \case
         Nothing -> hitRight ray (tmin, tmax)
         res@(Just (hit, _)) -> fmap (<|> res) (hitRight ray (tmin, hr_t hit))

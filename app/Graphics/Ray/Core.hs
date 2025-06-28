@@ -78,21 +78,20 @@ isect (a, b) (c, d) = let
   in if imin > imax then Nothing else Just (imin, imax)
 
 -- private
--- TODO: edge cases
-hitsInterval :: Interval -> Double -> Double -> Interval
-hitsInterval (tmin, tmax) x d = let
+overlapsInterval :: Interval -> Double -> Double -> Interval
+overlapsInterval (tmin, tmax) x d = let
   t0 = (tmin - x) / d
   t1 = (tmax - x) / d
   in if t0 < t1 then (t0, t1) else (t1, t0)
 
 type Box = V3 Interval
 
-hitsBox :: Box -> Ray -> Interval -> Bool
-hitsBox (V3 ix iy iz) (Ray (V3 ox oy oz) (V3 dx dy dz)) (tmin, tmax) =
+overlapsBox :: Box -> Ray -> Interval -> Bool
+overlapsBox (V3 ix iy iz) (Ray (V3 ox oy oz) (V3 dx dy dz)) (tmin, tmax) =
   isJust $ do
-    (tmin', tmax') <- isect (tmin, tmax) (hitsInterval ix ox dx)
-    (tmin'', tmax'') <- isect (tmin', tmax') (hitsInterval iy oy dy)
-    isect (tmin'', tmax'') (hitsInterval iz oz dz)
+    (tmin', tmax') <- isect (tmin, tmax) (overlapsInterval ix ox dx)
+    (tmin'', tmax'') <- isect (tmin', tmax') (overlapsInterval iy oy dy)
+    isect (tmin'', tmax'') (overlapsInterval iz oz dz)
 
 fromCorners :: Point3 -> Point3 -> Box
 fromCorners = liftA2 (\x y -> if x < y then (x, y) else (y, x))
