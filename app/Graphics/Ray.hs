@@ -2,6 +2,8 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE InstanceSigs #-}
+{-# LANGUAGE FlexibleInstances #-}
 module Graphics.Ray where
 
 import Graphics.Ray.Core
@@ -48,8 +50,19 @@ defaultCameraSettings = CameraSettings
   , cs_focusDist = 10.0
   }
 
+class ToRandom m where
+  toRandom :: m a -> State StdGen a
+
+instance ToRandom Identity where
+  toRandom :: Identity a -> State StdGen a
+  toRandom = pure . runIdentity
+
+instance ToRandom (State StdGen) where
+  toRandom :: State StdGen a -> State StdGen a
+  toRandom = id
+
 -- TODO: modify to return seed
-raytrace :: CameraSettings -> Geometry Identity Material -> StdGen -> A.Matrix D Color
+raytrace :: ToRandom m => CameraSettings -> Geometry m Material -> StdGen -> A.Matrix D Color
 raytrace (CameraSettings {..}) (Geometry _ hitWorld) seed = let
   imageHeight = ceiling (fromIntegral cs_imageWidth / cs_aspectRatio)
   viewportHeight = cs_focusDist * tan (cs_vfov / 2) * 2
@@ -91,7 +104,7 @@ raytrace (CameraSettings {..}) (Geometry _ hitWorld) seed = let
   rayColor depth ray
     | depth <= 0 = pure zero
     | otherwise =
-    case runIdentity (hitWorld ray (0.0001, infinity)) of
+    toRandom (hitWorld ray (0.0001, infinity)) >>= \case
       Nothing -> pure (cs_background ray)
       Just (hit, Material mat) -> 
         mat ray hit >>= \case
