@@ -65,7 +65,7 @@ sphere center radius = let
           , hr_point = point
           , hr_normal = if frontFace then outwardNormal else -outwardNormal
           , hr_frontFace = frontFace
-          , hr_uv = sphereUV outwardNormal -- TODO: make sure this isn't computed whenever hr_t is accessed
+          , hr_uv = sphereUV outwardNormal -- only computed when necessary thanks to laziness
           }
     Just (hit, ())
   

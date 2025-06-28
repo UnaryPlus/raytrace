@@ -34,7 +34,7 @@ perlinNoise (V3 x y z) = let
     let coef = smoothstep (i' * fx + (1 - i') * (1 - fx)) * smoothstep (j' * fy + (1 - j') * (1 - fy)) * smoothstep (k' * fz + (1 - k') * (1 - fz))
     [ coef * (grad `dot` rel) ]
 
--- range: TODO
+-- fractalNoise 1 = perlinNoise
 fractalNoise :: Int -> V3 Double -> Double
 fractalNoise depth p = let
   coefs = iterate (/2) 1

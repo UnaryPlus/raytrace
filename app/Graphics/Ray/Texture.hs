@@ -7,7 +7,7 @@ module Graphics.Ray.Texture
 import Graphics.Ray.Core
 import Graphics.Ray.Noise
 
-import Linear
+import Linear (V2(V2), V3(V3), (^*))
 import qualified Data.Massiv.Array as A
 import Data.Massiv.Array (Ix2((:.)), (!))
 
@@ -22,25 +22,6 @@ solidTexture f = Texture (\p _ -> f p)
 uvTexture :: (V2 Double -> Color) -> Texture
 uvTexture f = Texture (const f)
 
-checkerTexture :: Double -> Color -> Color -> Texture
-checkerTexture scale c1 c2 =
-  let invScale = 1 / scale in
-  solidTexture $ \p ->
-    let ns = fmap floor (p ^* invScale) :: V3 Int in
-    if even (sum ns) then c1 else c2
-
--- TODO: add more parameters, use fractal noise?
-noiseTexture :: Double -> Texture
-noiseTexture freq =
-  solidTexture $ \p -> 
-    1 ^* (perlinNoise (p ^* freq) / sqrt 3 + 1/2)
-
--- TODO: add more parameters?
-marbleTexture :: Double -> Texture
-marbleTexture freq =
-  solidTexture $ \p@(V3 _ _ z) ->
-    1 ^* (0.5 + 0.5 * sin (z * freq + 10 * turbulence 7 p))
-
 imageTexture :: (A.Manifest r Color) => A.Matrix r Color -> Texture
 imageTexture image = let 
   A.Sz (h :. w) = A.size image 
@@ -52,3 +33,22 @@ imageTexture image = let
     j = floor ((1 - v) * h') `mod` h
     in
     image ! (j :. i)
+
+checkerTexture :: Double -> Color -> Color -> Texture
+checkerTexture scale c1 c2 =
+  let invScale = 1 / scale in
+  solidTexture $ \p ->
+    let ns = fmap floor (p ^* invScale) :: V3 Int in
+    if even (sum ns) then c1 else c2
+
+noiseTexture :: Int -> Double -> V3 Double -> Color -> Color -> Texture
+noiseTexture k freq shift color0 color1 = let
+  invSqrt3 = 1 / sqrt 3
+  getNoise p = fractalNoise k (p ^* freq + shift) * invSqrt3 + 0.5 
+  diff = color1 - color0
+  in solidTexture $ \p -> color0 + diff ^* getNoise p
+
+marbleTexture :: Double -> Texture
+marbleTexture freq =
+  solidTexture $ \p@(V3 _ _ z) ->
+    1 ^* (0.5 + 0.5 * sin (z * freq + 10 * turbulence 7 p))

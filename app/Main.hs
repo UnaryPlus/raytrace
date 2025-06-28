@@ -11,7 +11,7 @@ import Graphics.Ray.Geometry
 import Graphics.Ray
 
 import Linear (V3(V3), (*^), normalize, norm, (!*!))
-import System.Random (StdGen, newStdGen, randomR, random)
+import System.Random (StdGen, newStdGen, randomR, random, mkStdGen)
 import Control.Monad.State (State, runState, state)
 import Control.Monad (forM)
 import Control.Applicative (liftA2)
@@ -54,7 +54,7 @@ metalTest = let
 
   in do
   seed <- newStdGen
-  writeImageRTW "test_image.png" $ raytrace settings world seed
+  writeImageSqrt "test_image.png" $ raytrace settings world seed
 
 checkerTest :: IO ()
 checkerTest = let
@@ -78,11 +78,11 @@ checkerTest = let
 
   in do
   seed <- newStdGen
-  writeImageRTW "test_image.png" $ raytrace settings world seed
+  writeImageSqrt "test_image.png" $ raytrace settings world seed
 
 noiseTest :: IO ()
 noiseTest = let
-  groundMaterial = lambertian (noiseTexture 4)
+  groundMaterial = lambertian (noiseTexture 1 4 0 0 1)
   ballMaterial = lambertian (marbleTexture 4)
 
   world = group 
@@ -103,7 +103,7 @@ noiseTest = let
     
   in do
   seed <- newStdGen
-  writeImageRTW "test_image.png" $ raytrace settings world seed
+  writeImageSqrt "noise_test.png" $ raytrace settings world seed
 
 quadTest :: IO ()
 quadTest = let
@@ -134,7 +134,7 @@ quadTest = let
 
   in do
   seed <- newStdGen
-  writeImageRTW "test_image.png" $ raytrace settings world seed
+  writeImageSqrt "test_image.png" $ raytrace settings world seed
 
 cuboidTest :: IO ()
 cuboidTest = do
@@ -144,6 +144,14 @@ cuboidTest = do
   let world = transform (translate (V3 0 0 (-3)) !*! rotateX (degrees 60)) object
   let settings = defaultCameraSettings { cs_imageWidth = 300 }
   writeImage "test_image.png" . raytrace settings world =<< newStdGen
+
+sphereUVTest :: IO ()
+sphereUVTest = do
+  globe <- readImage "images/earthmap.jpg"
+  let globeMaterial = lambertian (imageTexture (globe :: Matrix U Color))
+  let world = globeMaterial <$ group [ sphere (V3 0 0 (-2)) 0.4, sphere (V3 0 0 (-1)) 0.4 ]
+  let settings = defaultCameraSettings { cs_imageWidth = 1, cs_samplesPerPixel = 1, cs_vfov = 0.0001}
+  writeImage "test_image.png" (raytrace settings world (mkStdGen 12))
 
 demo1 :: IO ()
 demo1 = let
@@ -195,7 +203,7 @@ demo1 = let
   in do
   seed <- newStdGen
   let (world, seed') = runState genWorld seed
-  writeImageRTW "test_image.png" $ raytrace settings world seed'
+  writeImageSqrt "test_image.png" $ raytrace settings world seed'
 
 -- This should take less than 2 minutes
 cornellBox :: IO ()
@@ -227,7 +235,7 @@ cornellBox = let
     , cs_lookAt = V3 278 278 0
     }
 
-  in writeImageRTW "cornell_box.png" . raytrace settings world =<< newStdGen
+  in writeImageSqrt "cornell_box.png" . raytrace settings world =<< newStdGen
 
 cornellSmoke :: IO ()
 cornellSmoke = let
@@ -265,7 +273,7 @@ cornellSmoke = let
     , cs_lookAt = V3 278 278 0
     }
 
-  in writeImageRTW "cornell_smoke.png" . raytrace settings world =<< newStdGen
+  in writeImageSqrt "cornell_smoke.png" . raytrace settings world =<< newStdGen
 
 main :: IO ()
-main = cornellSmoke
+main = sphereUVTest

@@ -61,10 +61,9 @@ instance ToRandom (State StdGen) where
   toRandom :: State StdGen a -> State StdGen a
   toRandom = id
 
--- TODO: modify to return seed
 raytrace :: ToRandom m => CameraSettings -> Geometry m Material -> StdGen -> A.Matrix D Color
 raytrace (CameraSettings {..}) (Geometry _ hitWorld) seed = let
-  imageHeight = ceiling (fromIntegral cs_imageWidth / cs_aspectRatio)
+  imageHeight = round (fromIntegral cs_imageWidth / cs_aspectRatio)
   viewportHeight = cs_focusDist * tan (cs_vfov / 2) * 2
   viewportWidth = viewportHeight * fromIntegral cs_imageWidth / fromIntegral imageHeight
 
@@ -119,7 +118,8 @@ raytrace (CameraSettings {..}) (Geometry _ hitWorld) seed = let
     pure (sum colors ^/ fromIntegral cs_samplesPerPixel)
 
   -- array of random seeds for each pixel (constructed using splitGen)
-  seeds = snd (A.randomArrayS seed (A.Sz (imageHeight :. cs_imageWidth)) splitGen) :: A.Matrix B StdGen
+  seeds :: A.Matrix B StdGen
+  (_, seeds) = A.randomArrayS seed (A.Sz (imageHeight :. cs_imageWidth)) splitGen
 
   in A.makeArray A.Par (A.Sz (imageHeight :. cs_imageWidth)) (\ix@(j :. i) -> evalState (pixelColor i j) (seeds ! ix))
 
@@ -136,8 +136,8 @@ writeImage path m = I.writeImageAuto path (A.map toPixel m)
     toPixel (V3 r g b) = C.Pixel (C.ColorSRGB r g b)
 
 -- Write image using incorrect color space conversion from "Ray Tracing in One Weekend"
-writeImageRTW :: (A.Source r Color) => FilePath -> A.Matrix r Color -> IO ()
-writeImageRTW path m = I.writeImageAuto path (A.map toPixel m)
+writeImageSqrt :: (A.Source r Color) => FilePath -> A.Matrix r Color -> IO ()
+writeImageSqrt path m = I.writeImageAuto path (A.map toPixel m)
   where
     toPixel :: Color -> C.Pixel (SRGB 'NonLinear) Double
     toPixel (V3 r g b) = C.Pixel (C.ColorSRGB (sqrt r) (sqrt g) (sqrt b))
