@@ -14,7 +14,7 @@ import Control.Monad.State (State, state)
 import Control.Monad (guard, foldM)
 import Control.Applicative ((<|>))
 import Data.List (sortOn)
-import Data.Bifunctor (first)
+import Data.Bifunctor (first, second)
 import Data.Functor.Identity (Identity(Identity), runIdentity)
 import Data.Functor ((<&>))
 
@@ -23,8 +23,7 @@ data Geometry m a = Geometry Box (Ray -> Interval -> m (Maybe (HitRecord, a)))
 instance Functor m => Functor (Geometry m) where
   {-# SPECIALISE fmap :: (a -> b) -> Geometry Identity a -> Geometry Identity b #-}
   fmap :: (a -> b) -> Geometry m a -> Geometry m b
-  fmap f (Geometry bbox hit) = Geometry bbox (fmap (fmap (fmap (fmap (fmap f)))) hit) -- lol
-  -- TODO: is this implementation inefficient?
+  fmap f (Geometry bbox hit) = Geometry bbox (\ray ival -> fmap (fmap (second f)) (hit ray ival))
 
 pureGeometry :: Applicative m => Geometry Identity a -> Geometry m a
 pureGeometry (Geometry bbox f) = Geometry bbox (\ray ival -> pure (runIdentity (f ray ival)))
@@ -153,8 +152,8 @@ constantMedium density tex (Geometry bbox hitObj) = let
             let hit = HitRecord
                   { hr_t = t
                   , hr_point = orig + t *^ dir
-                  , hr_normal = undefined
-                  , hr_frontFace = undefined
+                  , hr_normal = undefined -- safe
+                  , hr_frontFace = undefined -- safe
                   , hr_uv = uv
                   }
             Just (hit, mat)
@@ -249,10 +248,11 @@ dropLast :: V4 a -> V3 a
 dropLast (V4 x y z _) = V3 x y z
 
 transform :: Functor m => M44 Double -> Geometry m a -> Geometry m a
-transform m (Geometry _ hitObj) = let
+transform m (Geometry bbox hitObj) = let
   m34 = dropLast m
   inv_m = dropLast (inv44 m)
-  bbox' = undefined -- TODO
+  cornerCoords = mapM ((m34 !*) . V4.point) (allCorners bbox) :: V3 [Double]
+  bbox' = fromCorners (fmap minimum cornerCoords) (fmap maximum cornerCoords)
   in Geometry bbox' $ \(Ray orig dir) ival ->
     let ray' = Ray (inv_m !* V4.point orig) (inv_m !* V4.vector dir) in
     flip (fmap . fmap . first) (hitObj ray' ival) $ \hit@(HitRecord {..}) ->

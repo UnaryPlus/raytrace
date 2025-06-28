@@ -205,7 +205,7 @@ demo1 = let
   let (world, seed') = runState genWorld seed
   writeImageSqrt "test_image.png" $ raytrace settings world seed'
 
--- This should take less than 2 minutes
+-- This should take less than 110 seconds
 cornellBox :: IO ()
 cornellBox = let
   red = lambertian (constantTexture (V3 0.65 0.05 0.05))
@@ -276,4 +276,4 @@ cornellSmoke = let
   in writeImageSqrt "cornell_smoke.png" . raytrace settings world =<< newStdGen
 
 main :: IO ()
-main = sphereUVTest
+main = cornellBox

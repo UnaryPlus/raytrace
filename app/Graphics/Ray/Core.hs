@@ -35,6 +35,10 @@ reflect :: Vec3 -> Vec3 -> Vec3
 reflect normal v = 
   v - 2 * dot normal v *^ normal
 
+-- nearZero :: Vec3 -> Bool
+-- nearZero (V3 x y z) = abs x < epsilon && abs y < epsilon && abs z < epsilon
+--   where epsilon = 1e-8
+
 randomUnitVector :: (RandomGen g, MonadState g m) => m Vec3
 randomUnitVector = do
   vec <- state (randomR (-1, 1))
@@ -95,6 +99,12 @@ overlapsBox (V3 ix iy iz) (Ray (V3 ox oy oz) (V3 dx dy dz)) (tmin, tmax) =
 
 fromCorners :: Point3 -> Point3 -> Box
 fromCorners = liftA2 (\x y -> if x < y then (x, y) else (y, x))
+
+allCorners :: Box -> [ Point3 ]
+allCorners (V3 i1 i2 i3) = 
+  [ V3 (f1 i1) (f2 i2) (f3 i3) 
+  | f1 <- [ fst, snd ], f2 <- [ fst, snd ], f3 <- [ fst, snd ]
+  ]
 
 boxJoin :: Box -> Box -> Box
 boxJoin = liftA2 (\(min1, max1) (min2, max2) -> (min min1 min2, max max1 max2))

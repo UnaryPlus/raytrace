@@ -1,7 +1,7 @@
 {-# LANGUAGE RecordWildCards #-}
 module Graphics.Ray.Material 
   ( Material(Material)
-  , lightSource, lambertian, mirror, metal, dielectric, thinPane, isotropic
+  , lightSource, lambertian, mirror, metal, dielectric, transparent, isotropic
   ) where
 
 import Graphics.Ray.Core
@@ -21,8 +21,18 @@ lambertian :: Texture -> Material
 lambertian (Texture tex) = Material $
   \_ (HitRecord {..}) -> do
     u <- randomUnitVector
-    -- TODO: make sure hr_normal + u is not too close to 0?
     pure (zero, Just (tex hr_point hr_uv, Ray hr_point (hr_normal + u)))
+
+-- lambertian :: Texture -> Material
+-- lambertian (Texture tex) = Material $
+--   \_ (HitRecord {..}) -> do
+--     dir <- randomFrom hr_normal
+--     pure (zero, Just (tex hr_point hr_uv, Ray hr_point dir))
+--   where
+--     randomFrom normal = do
+--       u <- randomUnitVector
+--       let d = normal + u
+--       if nearZero d then randomFrom normal else pure d
 
 mirror :: Texture -> Material
 mirror (Texture tex) = Material $
@@ -64,9 +74,8 @@ dielectric ior = Material $
     
     pure (zero, Just (V3 1 1 1, Ray hr_point dir'))    
 
--- TODO: use Schlick approximation?
-thinPane :: Texture -> Material
-thinPane (Texture tex) = Material $
+transparent :: Texture -> Material
+transparent (Texture tex) = Material $
   \(Ray _ dir) (HitRecord {..}) ->
     pure (zero, Just (tex hr_point hr_uv, Ray hr_point dir))
 
