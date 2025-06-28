@@ -197,7 +197,7 @@ demo1 = let
   let (world, seed') = runState genWorld seed
   writeImageRTW "test_image.png" $ raytrace settings world seed'
 
--- TODO: make sure this completes in under 2:00
+-- This should take less than 2 minutes
 cornellBox :: IO ()
 cornellBox = let
   red = lambertian (constantTexture (V3 0.65 0.05 0.05))
@@ -227,7 +227,45 @@ cornellBox = let
     , cs_lookAt = V3 278 278 0
     }
 
-  in writeImageRTW "test_image.png" . raytrace settings world =<< newStdGen
+  in writeImageRTW "cornell_box.png" . raytrace settings world =<< newStdGen
+
+cornellSmoke :: IO ()
+cornellSmoke = let
+  red = lambertian (constantTexture (V3 0.65 0.05 0.05))
+  white = lambertian (constantTexture (V3 0.73 0.73 0.73))
+  green = lambertian (constantTexture (V3 0.12 0.45 0.15))
+  light = lightSource (constantTexture (V3 7 7 7))
+
+  surfaces = group
+    [ green <$ parallelogram (V3 555 0 0) (V3 0 555 0) (V3 0 0 555)
+    , red <$ parallelogram (V3 0 0 0) (V3 0 555 0) (V3 0 0 555)
+    , light <$ parallelogram (V3 113 554 127) (V3 330 0 0) (V3 0 0 305)
+    , white <$ parallelogram (V3 0 0 0) (V3 555 0 0) (V3 0 0 555)
+    , white <$ parallelogram (V3 555 555 555) (V3 (-555) 0 0) (V3 0 0 (-555))
+    , white <$ parallelogram (V3 0 0 555) (V3 555 0 0) (V3 0 555 0)
+    ]
+  
+  cube1 = transform (translate (V3 265 0 295) !*! rotateY (degrees 15)) $ cuboid (fromCorners (V3 0 0 0) (V3 165 330 165))
+  cube2 = transform (translate (V3 130 0 65) !*! rotateY (degrees (-18))) $ cuboid (fromCorners (V3 0 0 0) (V3 165 165 165))
+  
+  world = group
+    [ pureGeometry surfaces
+    , constantMedium 0.01 (constantTexture (V3 0 0 0)) cube1
+    , constantMedium 0.01 (constantTexture (V3 1 1 1)) cube2
+    ]
+
+  settings = defaultCameraSettings
+    { cs_aspectRatio = 1.0
+    , cs_imageWidth = 600
+    , cs_samplesPerPixel = 200
+    , cs_maxRecursionDepth = 50
+    , cs_background = const (V3 0 0 0)
+    , cs_vfov = degrees 40
+    , cs_center = V3 278 278 (-800)
+    , cs_lookAt = V3 278 278 0
+    }
+
+  in writeImageRTW "cornell_smoke.png" . raytrace settings world =<< newStdGen
 
 main :: IO ()
-main = cornellBox
+main = cornellSmoke
