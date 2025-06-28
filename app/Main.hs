@@ -16,6 +16,7 @@ import Control.Monad.State (State, runState, state)
 import Control.Monad (forM)
 import Control.Applicative (liftA2)
 import Data.Massiv.Array (Matrix, U)
+import Data.Functor.Identity (Identity)
 
 sky :: Ray -> Color
 sky (Ray _ (normalize -> V3 _ y _)) = 
@@ -158,7 +159,7 @@ demo1 = let
     , materialMirror <$ sphere (V3 4 1 0) 1
     ]
 
-  genWorld :: State StdGen (Geometry Material)
+  genWorld :: State StdGen (Geometry Identity Material)
   genWorld = do
     fmap (bvhTree . autoTree . (bigSpheres ++) . concat) $ forM (liftA2 (,) [-11..10] [-11..10]) $ \(a, b) -> do
       offsetX <- state (randomR (0, 0.9))
@@ -196,6 +197,7 @@ demo1 = let
   let (world, seed') = runState genWorld seed
   writeImageRTW "test_image.png" $ raytrace settings world seed'
 
+-- TODO: make sure this completes in under 2:00
 cornellBox :: IO ()
 cornellBox = let
   red = lambertian (constantTexture (V3 0.65 0.05 0.05))
@@ -228,9 +230,4 @@ cornellBox = let
   in writeImageRTW "test_image.png" . raytrace settings world =<< newStdGen
 
 main :: IO ()
-main = do
-  putStrLn "branch: monadic"
-  let red = lambertian (constantTexture (V3 1 0 0))
-  let world = transform (translate (V3 0 0 (-1))) (red <$ sphere (V3 0 0 0) 0.5)
-  let settings = defaultCameraSettings { cs_samplesPerPixel = 5000 }
-  writeImage "test_image.png" . raytrace settings world =<< newStdGen
+main = cornellBox

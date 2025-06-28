@@ -17,6 +17,7 @@ import Graphics.Pixel.ColorSpace (SRGB, Linearity(Linear, NonLinear))
 import qualified Graphics.Pixel.ColorSpace as C
 import Control.Monad.State (State, state, evalState)
 import Control.Monad (replicateM)
+import Data.Functor.Identity (Identity, runIdentity)
 
 data CameraSettings = CameraSettings
   { cs_center :: Point3
@@ -48,7 +49,7 @@ defaultCameraSettings = CameraSettings
   }
 
 -- TODO: modify to return seed
-raytrace :: CameraSettings -> Geometry Material -> StdGen -> A.Matrix D Color
+raytrace :: CameraSettings -> Geometry Identity Material -> StdGen -> A.Matrix D Color
 raytrace (CameraSettings {..}) (Geometry _ hitWorld) seed = let
   imageHeight = ceiling (fromIntegral cs_imageWidth / cs_aspectRatio)
   viewportHeight = cs_focusDist * tan (cs_vfov / 2) * 2
@@ -90,7 +91,7 @@ raytrace (CameraSettings {..}) (Geometry _ hitWorld) seed = let
   rayColor depth ray
     | depth <= 0 = pure zero
     | otherwise =
-    hitWorld ray (0.0001, infinity) >>= \case
+    case runIdentity (hitWorld ray (0.0001, infinity)) of
       Nothing -> pure (cs_background ray)
       Just (hit, Material mat) -> 
         mat ray hit >>= \case
