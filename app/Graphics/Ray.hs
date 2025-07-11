@@ -4,11 +4,26 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE FlexibleInstances #-}
-module Graphics.Ray where
+module Graphics.Ray 
+  ( -- * Camera
+    CameraSettings(..), defaultCameraSettings
+    -- * Ray Tracing
+  , ToRandom(toRandom), raytrace
+    -- * Image IO
+  , readImage, writeImage, writeImageSqrt
+    -- * Reëxports
+  , module Graphics.Ray.Core
+  , module Graphics.Ray.Geometry
+  , module Graphics.Ray.Material
+  , module Graphics.Ray.Texture
+  , module Graphics.Ray.Noise
+  ) where
 
 import Graphics.Ray.Core
-import Graphics.Ray.Material
 import Graphics.Ray.Geometry
+import Graphics.Ray.Material
+import Graphics.Ray.Texture
+import Graphics.Ray.Noise
 
 import Linear (V2(V2), V3(V3), (*^), (^*), normalize, cross, (^/), zero)
 import System.Random (StdGen, random, splitGen)

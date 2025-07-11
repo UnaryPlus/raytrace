@@ -1,4 +1,6 @@
-module Graphics.Ray.Noise where
+module Graphics.Ray.Noise
+  ( perlinNoise, fractalNoise, turbulence
+  ) where
 
 import Graphics.Ray.Core
 
@@ -13,7 +15,9 @@ import Data.Bits ((.&.), xor)
 smoothstep :: Double -> Double
 smoothstep x = x*x * (3 - 2*x)
 
--- range: [-sqrt(3)/2, +sqrt(3)/2]
+-- | 3-dimensional Perlin noise.
+-- Repeats with period 256 in all three dimensions.
+-- Return values are always within the range $(-\sqrt{3}/2, +\sqrt{3}/2)$.
 perlinNoise :: V3 Double -> Double
 perlinNoise (V3 x y z) = let
   ix = floor x
@@ -34,13 +38,14 @@ perlinNoise (V3 x y z) = let
     let coef = smoothstep (i' * fx + (1 - i') * (1 - fx)) * smoothstep (j' * fy + (1 - j') * (1 - fy)) * smoothstep (k' * fz + (1 - k') * (1 - fz))
     [ coef * (grad `dot` rel) ]
 
--- fractalNoise 1 = perlinNoise
+-- | The first argument is the number of perlin noise terms. Each term has half the weight of the previous term, and double the noise frequency.
 fractalNoise :: Int -> V3 Double -> Double
 fractalNoise depth p = let
   coefs = iterate (/2) 1
   points = iterate (*2) p
   in sum (take depth (zipWith (*) coefs (map perlinNoise points)))
 
+-- | The absolute value of 'fractalNoise'.
 turbulence :: Int -> V3 Double -> Double
 turbulence depth p = abs (fractalNoise depth p)
 

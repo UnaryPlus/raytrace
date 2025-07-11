@@ -21,18 +21,8 @@ lambertian :: Texture -> Material
 lambertian (Texture tex) = Material $
   \_ (HitRecord {..}) -> do
     u <- randomUnitVector
+    -- TODO: make sure that ray direction is not too close to 0? (maybe by scaling u by 0.9999 or something)
     pure (zero, Just (tex hr_point hr_uv, Ray hr_point (hr_normal + u)))
-
--- lambertian :: Texture -> Material
--- lambertian (Texture tex) = Material $
---   \_ (HitRecord {..}) -> do
---     dir <- randomFrom hr_normal
---     pure (zero, Just (tex hr_point hr_uv, Ray hr_point dir))
---   where
---     randomFrom normal = do
---       u <- randomUnitVector
---       let d = normal + u
---       if nearZero d then randomFrom normal else pure d
 
 mirror :: Texture -> Material
 mirror (Texture tex) = Material $
@@ -47,7 +37,7 @@ metal fuzz (Texture tex) = Material $
     let scatter = dot dir' hr_normal > 0
     pure (zero, if scatter then Just (tex hr_point hr_uv, Ray hr_point dir') else Nothing)
 
--- private
+-- [private]
 refract :: Double -> Double -> Vec3 -> Vec3 -> Vec3 
 refract iorRatio cosTheta normal u = let
   perp = iorRatio *^ (u + cosTheta *^ normal) 
@@ -57,7 +47,7 @@ refract iorRatio cosTheta normal u = let
 dielectric :: Double -> Material
 dielectric ior = Material $
   \(Ray _ dir) (HitRecord {..}) -> do
-    let iorRatio = if hr_frontFace then 1/ior else ior
+    let iorRatio = if hr_frontSide then 1/ior else ior
     let u = normalize dir
     let cosTheta = min 1 (dot hr_normal (-u))
     let sinTheta = sqrt (1 - cosTheta * cosTheta)

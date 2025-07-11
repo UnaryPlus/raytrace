@@ -1,7 +1,16 @@
 {-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
-module Graphics.Ray.Geometry where
+module Graphics.Ray.Geometry 
+  ( -- * Geometry
+    Geometry(Geometry), pureGeometry, boundingBox
+    -- * Surfaces and Volumes
+  , sphere, parallelogram, cuboid, constantMedium
+    -- * Groups
+  , group, bvhNode, bvhTree, autoTree
+    -- * Transformations
+  , transform, translate, rotateX, rotateY, rotateZ
+  ) where
 
 import Graphics.Ray.Core
 import Graphics.Ray.Texture
@@ -18,6 +27,8 @@ import Data.Bifunctor (first, second)
 import Data.Functor.Identity (Identity(Identity), runIdentity)
 import Data.Functor ((<&>))
 
+-- | A @'Geometry' m a@ has a bounding box (used in the implementation of bounding volume hierarchies),
+-- as well as a function that TODO
 data Geometry m a = Geometry Box (Ray -> Interval -> m (Maybe (HitRecord, a)))
 
 instance Functor m => Functor (Geometry m) where
@@ -28,9 +39,11 @@ instance Functor m => Functor (Geometry m) where
 pureGeometry :: Applicative m => Geometry Identity a -> Geometry m a
 pureGeometry (Geometry bbox f) = Geometry bbox (\ray ival -> pure (runIdentity (f ray ival)))
 
+-- | Get a geometry's bounding box.
 boundingBox :: Geometry m a -> Box
 boundingBox (Geometry b _) = b
 
+-- | Construct a sphere with the given center and radius.
 sphere :: Point3 -> Double -> Geometry Identity ()
 sphere center radius = let
   diag = V3 radius radius radius
@@ -58,12 +71,12 @@ sphere center radius = let
     
     let point = orig + t *^ dir
     let outwardNormal = (point - center) ^/ radius
-    let frontFace = dot dir outwardNormal <= 0
+    let frontSide = dot dir outwardNormal <= 0
     let hit = HitRecord
           { hr_t = t
           , hr_point = point
-          , hr_normal = if frontFace then outwardNormal else -outwardNormal
-          , hr_frontFace = frontFace
+          , hr_normal = if frontSide then outwardNormal else -outwardNormal
+          , hr_frontSide = frontSide
           , hr_uv = sphereUV outwardNormal -- only computed when necessary thanks to laziness
           }
     Just (hit, ())
@@ -73,12 +86,16 @@ sphere center radius = let
 -- With default camera settings (-z direction is forward, +y direction is up),
 -- texture images will be wrapped around the sphere starting and ending on the
 -- far side of the sphere.
+
+-- [private]
 sphereUV :: Vec3 -> V2 Double
 sphereUV (V3 x y z) = V2 u v
   where
     u = atan2 x z / (2 * pi) + 0.5
     v = acos (-y) / pi 
 
+-- | Construct a parallelogram from a corner point and two edge vectors.
+-- Which side is the \"front side\" is determined by the right hand rule.
 parallelogram :: Point3 -> Vec3 -> Vec3 -> Geometry Identity ()
 parallelogram q u v = let
   cp = cross u v
@@ -101,19 +118,20 @@ parallelogram q u v = let
     let a = normalS `dot` (p_rel `cross` v)
     let b = normalS `dot` (u `cross` p_rel)
     guard (0 <= a && a <= 1 && 0 <= b && b <= 1)
-    let frontFace = denom < 0
+    let frontSide = denom < 0
 
     let hit = HitRecord
           { hr_t = t
           , hr_point = p
-          , hr_normal = if frontFace then normal else -normal
-          , hr_frontFace = frontFace
+          , hr_normal = if frontSide then normal else -normal
+          , hr_frontSide = frontSide
           , hr_uv = V2 a b
           }
     Just (hit, ())
 
   in Geometry bbox hitParallelogram 
 
+-- | Construct an axis-aligned rectangular cuboid (implemented as a 'group' of parallelograms).
 cuboid :: Box -> Geometry Identity ()
 cuboid (V3 (xmin, xmax) (ymin, ymax) (zmin, zmax)) = let
   dx = V3 (xmax - xmin) 0 0
@@ -153,7 +171,7 @@ constantMedium density tex (Geometry bbox hitObj) = let
                   { hr_t = t
                   , hr_point = orig + t *^ dir
                   , hr_normal = undefined -- safe
-                  , hr_frontFace = undefined -- safe
+                  , hr_frontSide = undefined -- safe
                   , hr_uv = uv
                   }
             Just (hit, mat)
@@ -206,6 +224,19 @@ autoTree = \case
     (left, right) = splitAt (length obs `div` 2) obs'
     in Node (autoTree left) (autoTree right)
 
+-- | Apply an affine transformation (represented as a 4 by 4 matrix whose bottom row is 0 0 0 1) to a geometric object.
+transform :: Functor m => M44 Double -> Geometry m a -> Geometry m a
+transform m (Geometry bbox hitObj) = let
+  m34 = dropLast m
+  inv_m = dropLast (inv44 m)
+  cornerCoords = mapM ((m34 !*) . V4.point) (allCorners bbox) :: V3 [Double]
+  bbox' = fromCorners (fmap minimum cornerCoords) (fmap maximum cornerCoords)
+  in Geometry bbox' $ \(Ray orig dir) ival ->
+    let ray' = Ray (inv_m !* V4.point orig) (inv_m !* V4.vector dir) in
+    flip (fmap . fmap . first) (hitObj ray' ival) $ \hit@(HitRecord {..}) ->
+      hit { hr_point = m34 !* V4.point hr_point, hr_normal = m34 !* V4.vector hr_normal }
+
+-- | Translation.
 translate :: Vec3 -> M44 Double
 translate (V3 x y z) = V4
   (V4 1 0 0 x)
@@ -213,6 +244,7 @@ translate (V3 x y z) = V4
   (V4 0 0 1 z)
   (V4 0 0 0 1)
 
+-- | Rotation about the X axis.
 rotateX :: Double -> M44 Double
 rotateX angle = V4
   (V4 1 0 0 0)
@@ -223,6 +255,7 @@ rotateX angle = V4
     c = cos angle
     s = sin angle
 
+-- | Rotation about the Y axis.
 rotateY :: Double -> M44 Double
 rotateY angle = V4
   (V4 c 0 s 0)
@@ -233,6 +266,7 @@ rotateY angle = V4
     c = cos angle
     s = sin angle
 
+-- | Rotation about the Z axis.
 rotateZ :: Double -> M44 Double
 rotateZ angle = V4
   (V4 c (-s) 0 0)
@@ -246,14 +280,3 @@ rotateZ angle = V4
 -- private
 dropLast :: V4 a -> V3 a
 dropLast (V4 x y z _) = V3 x y z
-
-transform :: Functor m => M44 Double -> Geometry m a -> Geometry m a
-transform m (Geometry bbox hitObj) = let
-  m34 = dropLast m
-  inv_m = dropLast (inv44 m)
-  cornerCoords = mapM ((m34 !*) . V4.point) (allCorners bbox) :: V3 [Double]
-  bbox' = fromCorners (fmap minimum cornerCoords) (fmap maximum cornerCoords)
-  in Geometry bbox' $ \(Ray orig dir) ival ->
-    let ray' = Ray (inv_m !* V4.point orig) (inv_m !* V4.vector dir) in
-    flip (fmap . fmap . first) (hitObj ray' ival) $ \hit@(HitRecord {..}) ->
-      hit { hr_point = m34 !* V4.point hr_point, hr_normal = m34 !* V4.vector hr_normal }

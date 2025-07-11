@@ -1,7 +1,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 module Graphics.Ray.Texture 
   ( Texture(Texture)
-  , constantTexture, solidTexture, uvTexture, checkerTexture, noiseTexture, marbleTexture, imageTexture
+  , constantTexture, solidTexture, uvTexture, imageTexture, checkerTexture, noiseTexture, marbleTexture
   ) where
 
 import Graphics.Ray.Core

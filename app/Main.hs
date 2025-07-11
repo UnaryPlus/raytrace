@@ -82,7 +82,7 @@ checkerTest = let
 
 noiseTest :: IO ()
 noiseTest = let
-  groundMaterial = lambertian (noiseTexture 1 4 0 0 1)
+  groundMaterial = lambertian (noiseTexture 7 2.0 (V3 10 0 0) 0 1)
   ballMaterial = lambertian (marbleTexture 4)
 
   world = group 
@@ -276,4 +276,4 @@ cornellSmoke = let
   in writeImageSqrt "cornell_smoke.png" . raytrace settings world =<< newStdGen
 
 main :: IO ()
-main = cornellBox
+main = noiseTest
