@@ -276,4 +276,4 @@ cornellSmoke = let
   in writeImageSqrt "cornell_smoke.png" . raytrace settings world =<< newStdGen
 
 main :: IO ()
-main = noiseTest
+main = cornellBox
