@@ -17,7 +17,7 @@ smoothstep x = x*x * (3 - 2*x)
 
 -- | 3-dimensional Perlin noise.
 -- Repeats with period 256 in all three dimensions.
--- Return values are always within the range $(-\sqrt{3}/2, +\sqrt{3}/2)$.
+-- Return values are always within the range \([-\sqrt{3}/2, +\sqrt{3}/2]\).
 perlinNoise :: V3 Double -> Double
 perlinNoise (V3 x y z) = let
   ix = floor x

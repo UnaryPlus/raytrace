@@ -7,7 +7,7 @@ module Graphics.Ray.Geometry
     -- * Surfaces and Volumes
   , sphere, parallelogram, cuboid, constantMedium
     -- * Groups
-  , group, bvhNode, bvhTree, autoTree
+  , group, bvhNode, Tree(Leaf, Node), bvhTree, autoTree
     -- * Transformations
   , transform, translate, rotateX, rotateY, rotateZ
   ) where
@@ -28,7 +28,10 @@ import Data.Functor.Identity (Identity(Identity), runIdentity)
 import Data.Functor ((<&>))
 
 -- | A @'Geometry' m a@ has a bounding box (used in the implementation of bounding volume hierarchies),
--- as well as a function that TODO
+-- as well as a function that takes a ray and an interval, and in the @m@ monad, produces either @Nothing@
+-- (if the ray does not intersect the shape within that interval) or a tuple consisting of a 'HitRecord' and a value of type @a@.
+-- Typically, @m@ is either 'Identity' or @'State' 'StdGen'@, and @a@ is either @()@ or 'Material'. Use the '(<$)' operator
+-- to add a material to a geometry.
 data Geometry m a = Geometry Box (Ray -> Interval -> m (Maybe (HitRecord, a)))
 
 instance Functor m => Functor (Geometry m) where
@@ -36,6 +39,7 @@ instance Functor m => Functor (Geometry m) where
   fmap :: (a -> b) -> Geometry m a -> Geometry m b
   fmap f (Geometry bbox hit) = Geometry bbox (\ray ival -> fmap (fmap (second f)) (hit ray ival))
 
+-- | Promote a pure geometry to a monadic one.
 pureGeometry :: Applicative m => Geometry Identity a -> Geometry m a
 pureGeometry (Geometry bbox f) = Geometry bbox (\ray ival -> pure (runIdentity (f ray ival)))
 
@@ -83,11 +87,10 @@ sphere center radius = let
   
   in Geometry bbox hitSphere
 
+-- [private]
 -- With default camera settings (-z direction is forward, +y direction is up),
 -- texture images will be wrapped around the sphere starting and ending on the
 -- far side of the sphere.
-
--- [private]
 sphereUV :: Vec3 -> V2 Double
 sphereUV (V3 x y z) = V2 u v
   where
@@ -146,8 +149,13 @@ cuboid (V3 (xmin, xmax) (ymin, ymax) (zmin, zmax)) = let
     , parallelogram (V3 xmin ymin zmin) dx dz -- bottom
     ]
 
--- ASSUMES CONVEXITY
-constantMedium :: Double -> Texture -> Geometry Identity () -> Geometry (State StdGen) Material
+-- TODO: Allow materials other than isotropic? (allowing pitchBlack in particular would be good for efficiency)
+-- | Construct a constant-density medium (like fog or smoke).
+constantMedium
+  :: Double -- ^ Density 
+  -> Texture -- ^ Color
+  -> Geometry Identity () -- ^ Surface (assumed to be convex in current implementation)
+  -> Geometry (State StdGen) Material
 constantMedium density tex (Geometry bbox hitObj) = let
   negInvDensity = -(1 / density)
   mat = isotropic tex
@@ -178,6 +186,9 @@ constantMedium density tex (Geometry bbox hitObj) = let
 
   in Geometry bbox hitMedium
 
+-- | Group multiple geometric objects into a single object. When testing if a ray hits a group, 
+-- every constituent of the group is tested without regard to its position. With a large number of objects,
+-- use 'bvhTree' for greater efficiency.
 {-# SPECIALISE group :: [Geometry Identity a] -> Geometry Identity a #-}
 group :: Monad m => [Geometry m a] -> Geometry m a
 group obs = let
@@ -192,6 +203,8 @@ group obs = let
   
   in Geometry bbox hitGroup
 
+-- | A single node in a bounding volume hierarchy. Before testing whether a ray hits each child,
+-- it tests whether the ray hits a bounding box containing the two children.
 {-# SPECIALISE bvhNode :: Geometry Identity a -> Geometry Identity a -> Geometry Identity a #-}
 bvhNode :: Monad m => Geometry m a -> Geometry m a -> Geometry m a
 bvhNode (Geometry bboxLeft hitLeft) (Geometry bboxRight hitRight) = let
@@ -208,12 +221,16 @@ bvhNode (Geometry bboxLeft hitLeft) (Geometry bboxRight hitRight) = let
 
 data Tree a = Leaf a | Node (Tree a) (Tree a)
 
+-- | Group multiple geometric objects (organized as a tree) into a single object. A bounding box is created for every subtree of the 
+-- given tree; if a ray does not intersect the bounding box, it cannot hit any of the child objects, so none of
+-- them need to be tested further.
 {-# SPECIALISE bvhTree :: Tree (Geometry Identity a) -> Geometry Identity a #-}
 bvhTree :: Monad m => Tree (Geometry m a) -> Geometry m a
 bvhTree = \case
   Leaf a -> a
   Node left right -> bvhNode (bvhTree left) (bvhTree right)
 
+-- | Organize the geometric objects into a tree based on their positions.
 autoTree :: [Geometry m a] -> Tree (Geometry m a)
 autoTree = \case
   [] -> error "autoTree: empty list"
@@ -277,6 +294,6 @@ rotateZ angle = V4
     c = cos angle
     s = sin angle
 
--- private
+-- [private]
 dropLast :: V4 a -> V3 a
 dropLast (V4 x y z _) = V3 x y z

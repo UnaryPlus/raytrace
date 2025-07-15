@@ -15,7 +15,6 @@ import System.Random (StdGen, newStdGen, randomR, random, mkStdGen)
 import Control.Monad.State (State, runState, state)
 import Control.Monad (forM)
 import Control.Applicative (liftA2)
-import Data.Massiv.Array (Matrix, U)
 import Data.Functor.Identity (Identity)
 
 sky :: Ray -> Color
@@ -139,7 +138,7 @@ quadTest = let
 cuboidTest :: IO ()
 cuboidTest = do
   globe <- readImage "images/earthmap.jpg"
-  let globeMaterial = lambertian (imageTexture (globe :: Matrix U Color))
+  let globeMaterial = lambertian (imageTexture globe)
   let object = globeMaterial <$ cuboid (fromCorners (-V3 1 2 0.5) (V3 1 2 0.5))
   let world = transform (translate (V3 0 0 (-3)) !*! rotateX (degrees 60)) object
   let settings = defaultCameraSettings { cs_imageWidth = 300 }
@@ -148,7 +147,7 @@ cuboidTest = do
 sphereUVTest :: IO ()
 sphereUVTest = do
   globe <- readImage "images/earthmap.jpg"
-  let globeMaterial = lambertian (imageTexture (globe :: Matrix U Color))
+  let globeMaterial = lambertian (imageTexture globe)
   let world = globeMaterial <$ group [ sphere (V3 0 0 (-2)) 0.4, sphere (V3 0 0 (-1)) 0.4 ]
   let settings = defaultCameraSettings { cs_imageWidth = 1, cs_samplesPerPixel = 1, cs_vfov = 0.0001}
   writeImage "test_image.png" (raytrace settings world (mkStdGen 12))

@@ -11,7 +11,7 @@ module Graphics.Ray
   , ToRandom(toRandom), raytrace
     -- * Image IO
   , readImage, writeImage, writeImageSqrt
-    -- * Reëxports
+    -- * Re-exports
   , module Graphics.Ray.Core
   , module Graphics.Ray.Geometry
   , module Graphics.Ray.Material
@@ -27,7 +27,7 @@ import Graphics.Ray.Noise
 
 import Linear (V2(V2), V3(V3), (*^), (^*), normalize, cross, (^/), zero)
 import System.Random (StdGen, random, splitGen)
-import Data.Massiv.Array (B, D, S, Ix2((:.)), (!))
+import Data.Massiv.Array (B, D, S, U, Ix2((:.)), (!))
 import qualified Data.Massiv.Array as A
 import qualified Data.Massiv.Array.IO as I
 import Graphics.Pixel.ColorSpace (SRGB, Linearity(Linear, NonLinear))
@@ -37,19 +37,32 @@ import Control.Monad (replicateM)
 import Data.Functor.Identity (Identity, runIdentity)
 
 data CameraSettings = CameraSettings
-  { cs_center :: Point3
-  , cs_lookAt :: Point3
-  , cs_up :: Vec3
-  , cs_vfov :: Double
-  , cs_aspectRatio :: Double
-  , cs_imageWidth :: Int
-  , cs_samplesPerPixel :: Int
-  , cs_maxRecursionDepth :: Int
-  , cs_background :: Ray -> Color
-  , cs_defocusAngle :: Double
-  , cs_focusDist :: Double
+  { cs_center :: Point3 -- ^ Camera position 
+  , cs_lookAt :: Point3 -- ^ Point for the camera to look at 
+  , cs_up :: Vec3 -- ^ Camera \"up\" vector 
+  , cs_vfov :: Double -- ^ Vertical field of view (in radians) 
+  , cs_aspectRatio :: Double -- ^ Width-to-height ratio of image 
+  , cs_imageWidth :: Int -- ^ Image width in pixels 
+  , cs_samplesPerPixel :: Int -- ^ Number of top-level rays created per pixel 
+  , cs_maxRecursionDepth :: Int -- ^ Number of times a ray can reflect before recursion stops 
+  , cs_background :: Ray -> Color -- ^ Background color (which can depend on direction) 
+  , cs_defocusAngle :: Double -- ^ If this is positive, the image will be somewhat blurry in the foreground and background, 
+                              -- with only a single plane in focus (like an image produced by a real camera)
+  , cs_focusDist :: Double -- ^ Distance from the camera to the plane of focus (only matters if defocus angle is nonzero) 
   }
 
+-- | By default, the camera is positioned at the origin looking in the negative z direction, with the positive y direction being upward
+-- (and the positive x direction being rightward). The remaining attributes are as follows:
+-- @
+--   cs_vfov = pi / 2
+--   cs_aspectRatio = 1.0
+--   cs_imageWidth = 100
+--   cs_samplesPerPixel = 10
+--   cs_maxRecursionDepth = 10
+--   cs_background = const (V3 1 1 1)
+--   cs_defocusAngle = 0.0
+--   cs_focusDist = 10.0
+-- @
 defaultCameraSettings :: CameraSettings
 defaultCameraSettings = CameraSettings
   { cs_center = V3 0 0 0
@@ -76,6 +89,7 @@ instance ToRandom (State StdGen) where
   toRandom :: State StdGen a -> State StdGen a
   toRandom = id
 
+-- | Produce an image from the given camera settings, world, and seed.
 raytrace :: ToRandom m => CameraSettings -> Geometry m Material -> StdGen -> A.Matrix D Color
 raytrace (CameraSettings {..}) (Geometry _ hitWorld) seed = let
   imageHeight = round (fromIntegral cs_imageWidth / cs_aspectRatio)
@@ -138,19 +152,22 @@ raytrace (CameraSettings {..}) (Geometry _ hitWorld) seed = let
 
   in A.makeArray A.Par (A.Sz (imageHeight :. cs_imageWidth)) (\ix@(j :. i) -> evalState (pixelColor i j) (seeds ! ix))
 
-readImage :: (A.Manifest r Color) => FilePath -> IO (A.Matrix r Color)
+-- | Read an image file, converting each pixel to linear RGB color space.
+readImage :: FilePath -> IO (A.Matrix U Color)
 readImage path = A.compute . A.map fromPixel <$> (I.readImageAuto path :: IO (A.Matrix S (C.Pixel (SRGB 'Linear) Double)))
   where
     fromPixel :: C.Pixel (SRGB 'Linear) Double -> Color
     fromPixel (C.Pixel (C.ColorSRGB r g b)) = V3 r g b
 
+-- | Write an array of linear RGB colors to an image file.
 writeImage :: (A.Source r Color) => FilePath -> A.Matrix r Color -> IO ()
 writeImage path m = I.writeImageAuto path (A.map toPixel m)
   where
     toPixel :: Color -> C.Pixel (SRGB 'Linear) Double
     toPixel (V3 r g b) = C.Pixel (C.ColorSRGB r g b)
 
--- Write image using incorrect color space conversion from "Ray Tracing in One Weekend"
+-- | Write an array to an image file, using a slightly incorrect color space conversion function.
+-- This function exists so that TODO
 writeImageSqrt :: (A.Source r Color) => FilePath -> A.Matrix r Color -> IO ()
 writeImageSqrt path m = I.writeImageAuto path (A.map toPixel m)
   where

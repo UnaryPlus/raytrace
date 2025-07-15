@@ -22,7 +22,7 @@ import Data.Foldable (foldl')
 infinity :: Double
 infinity = 1/0
 
--- | Convert an angle from degrees to radians. @degrees x@ means $x$ degrees.
+-- | Convert an angle from degrees to radians. @degrees x@ means @x@ degrees.
 degrees :: Double -> Double
 degrees x = x * pi / 180
 
@@ -31,7 +31,7 @@ type Point3 = V3 Double
 type Color = V3 Double
 
 data Dim = X | Y | Z
-  deriving (Eq, Ord, Enum, Show)
+  deriving (Eq, Ord, Enum, Bounded, Show)
 
 -- | Get the X, Y, or Z component of a vector.
 component :: Dim -> V3 a -> a
@@ -68,7 +68,8 @@ randomInUnitDisk = do
     then pure vec
     else randomInUnitDisk
 
--- | A ray with an origin and a direction. There is no expectation that the direction be a unit vector.
+-- | A ray with an origin and a direction. Points on the ray @Ray orig dir@ are parametrized by @orig + t *^ dir@.
+-- There is no expectation that the direction be a unit vector.
 data Ray = Ray Point3 Vec3
   deriving (Show)
 
@@ -106,7 +107,7 @@ overlapsInterval (tmin, tmax) x d = let
   t1 = (tmax - x) / d
   in if t0 < t1 then (t0, t1) else (t1, t0)
 
--- | The product of three intervals. (TODO)
+-- | An axis-aligned box; the product of three intervals.
 type Box = V3 Interval
 
 -- | Create a box from two opposite corners.
@@ -136,7 +137,7 @@ padBox padding = fmap (padInterval padding)
 longestDim :: Box -> Dim
 longestDim = argMax . fmap size
 
--- | Test whether any part of the ray, when restricted to the interval, is within the box. TODO: reword "any part"
+-- | Test whether any part of the ray, when restricted to the interval, is within the box.
 overlapsBox :: Box -> Ray -> Interval -> Bool
 overlapsBox (V3 ix iy iz) (Ray (V3 ox oy oz) (V3 dx dy dz)) (tmin, tmax) =
   isJust $ do
@@ -144,11 +145,11 @@ overlapsBox (V3 ix iy iz) (Ray (V3 ox oy oz) (V3 dx dy dz)) (tmin, tmax) =
     (tmin'', tmax'') <- isect (tmin', tmax') (overlapsInterval iy oy dy)
     isect (tmin'', tmax'') (overlapsInterval iz oz dz)
 
--- | TODO
+-- | A record of an intersection of a ray with a surface.
 data HitRecord = HitRecord
-  { hr_t :: Double
-  , hr_point :: Point3
-  , hr_normal :: Vec3
-  , hr_frontSide :: Bool
-  , hr_uv :: V2 Double
+  { hr_t :: Double -- ^ The @t@ parameter of the intersection.
+  , hr_point :: Point3 -- ^ The location of the intersection.
+  , hr_normal :: Vec3 -- ^ The normal vector of the surface in the direction that the ray came from. Should always be a unit vector.
+  , hr_frontSide :: Bool -- ^ Whether the ray hit the "front side" (for a closed surface, the outside).
+  , hr_uv :: V2 Double -- ^ The texture coordinates of the intersection.
   }
