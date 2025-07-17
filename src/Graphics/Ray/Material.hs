@@ -57,6 +57,7 @@ refract iorRatio cosTheta normal u = let
   para = -(sqrt (abs (1 - quadrance perp)) *^ normal)
   in perp + para
 
+-- TODO: reconsider name
 -- | A material that either reflects or refracts all incoming rays, like clear glass.
 -- The argument is the index of refraction relative to the surrounding medium.
 dielectric :: Double -> Material

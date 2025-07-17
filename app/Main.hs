@@ -13,7 +13,7 @@ import Graphics.Ray
 import Linear (V3(V3), (*^), normalize, norm, (!*!))
 import System.Random (StdGen, newStdGen, randomR, random, mkStdGen)
 import Control.Monad.State (State, runState, state)
-import Control.Monad (forM)
+import Control.Monad (forM, replicateM)
 import Control.Applicative (liftA2)
 import Data.Functor.Identity (Identity)
 
@@ -274,5 +274,67 @@ cornellSmoke = let
 
   in writeImageSqrt "cornell_smoke.png" . raytrace settings world =<< newStdGen
 
+demo2 :: Int -> Int -> Int -> IO ()
+demo2 imageWidth samplesPerPixel maxRecursionDepth = let
+  ground = lambertian (constantTexture (V3 0.48 0.83 0.53))
+  white = lambertian (constantTexture (V3 0.73 0.73 0.73))
+
+  generateBoxes :: State StdGen (Geometry Identity Material)
+  generateBoxes = 
+    fmap ((ground <$) . bvhTree . autoTree) $ 
+    forM (liftA2 (,) [0..19] [0..19]) $ \(i, j) -> do
+      let x0 = -1000 + i * 100
+      let z0 = -1000 + j * 100
+      let x1 = x0 + 100
+      let z1 = z0 + 100
+      let y0 = 0
+      y1 <- state (randomR (1, 101))
+      pure (cuboid (fromCorners (V3 x0 y0 z0) (V3 x1 y1 z1)))
+  
+  generateBalls :: State StdGen (Geometry Identity Material)
+  generateBalls =
+    fmap ((white <$) . transform (translate (V3 (-100) 270 395) !*! rotateY (degrees 15)) . bvhTree . autoTree) $
+    replicateM 1000 $ do
+      p <- state (randomR (0, 165)) 
+      pure (sphere p 10)
+  
+  boundary = sphere (V3 360 150 145) 70 
+  
+  largeObjects earth =
+    [ lightSource (constantTexture (V3 7 7 7)) <$ parallelogram (V3 123 554 147) (V3 300 0 0) (V3 0 0 265)
+    , lambertian (constantTexture (V3 0.7 0.3 0.1)) <$ sphere (V3 415 400 200) 50
+    , dielectric 1.5 <$ sphere (V3 260 150 45) 50
+    , dielectric 1.5 <$ boundary
+    , metal 1.0 (constantTexture (V3 0.8 0.8 0.9)) <$ sphere (V3 0 150 145) 50
+    , lambertian (imageTexture earth) <$ transform (translate (V3 400 0 400) !*! rotateY (pi/2)) (sphere (V3 0 200 0) 100)
+    , lambertian (marbleTexture 0.2) <$ sphere (V3 220 280 300) 80
+    ]
+  
+  generateWorld earth = do
+    boxes <- generateBoxes
+    balls <- generateBalls
+    pure $ group 
+      [ pureGeometry (group (boxes : balls : largeObjects earth))
+      , constantMedium 0.0001 (constantTexture 1) (sphere (V3 0 0 0) 5000)
+      , constantMedium 0.2 (constantTexture (V3 0.2 0.4 0.9)) boundary
+      ]
+  
+  settings = defaultCameraSettings
+    { cs_center = V3 478 278 (-600)
+    , cs_lookAt = V3 278 278 0
+    , cs_vfov = degrees 40
+    , cs_aspectRatio = 1.0
+    , cs_imageWidth = imageWidth
+    , cs_samplesPerPixel = samplesPerPixel
+    , cs_maxRecursionDepth = maxRecursionDepth
+    , cs_background = const 0
+    }
+
+  in do
+    earth <- readImage "images/earthmap.jpg"
+    seed <- newStdGen
+    let (world, seed') = runState (generateWorld earth) seed
+    writeImageSqrt "demo2.png" (raytrace settings world seed')
+
 main :: IO ()
-main = cornellBox
+main = demo2 800 10000 40
