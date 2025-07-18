@@ -7,7 +7,7 @@ module Graphics.Ray.Texture
 import Graphics.Ray.Core
 import Graphics.Ray.Noise
 
-import Linear (V2(V2), V3(V3), (^*))
+import Linear (V2(V2), V3(V3), (^*), (*^), dot)
 import qualified Data.Massiv.Array as A
 import Data.Massiv.Array (Ix2((:.)), (!))
 
@@ -62,10 +62,18 @@ noiseTexture k freq shift color0 color1 = let
   diff = color1 - color0
   in solidTexture $ \p -> color0 + diff ^* getNoise p
 
--- TODO: generalize direction
 -- | Texture with noisy black and white stripes, resulting in a marble-like appearance. 
 -- The argument is the frequency of the stripes.
 marbleTexture :: Double -> Texture
 marbleTexture freq =
-  solidTexture $ \p@(V3 _ _ z) ->
-    1 ^* (0.5 + 0.5 * sin (z * freq + 10 * turbulence 7 p))
+  solidTexture $ \p@(V3 _ _ z) -> let
+    sinArg = z * freq
+    noise = 10 * turbulence 7 p
+    in 1 ^* (0.5 + 0.5 * sin (sinArg + noise))
+
+-- marbleTexture' :: Vec3 -> Double -> Texture
+-- marbleTexture' dir freq =
+--   solidTexture $ \p -> let
+--     sinArg = freq * dot dir p
+--     noise = 10 * turbulence 7 (freq * 0.25 *^ p)
+--     in 1 ^* (0.5 + 0.5 * sin (sinArg + noise))

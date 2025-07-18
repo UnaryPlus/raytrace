@@ -13,8 +13,6 @@ module Graphics.Ray.Geometry
   ) where
 
 import Graphics.Ray.Core
-import Graphics.Ray.Texture
-import Graphics.Ray.Material
 
 import Linear (V2(V2), V3(V3), dot, quadrance, (*^), (^/), cross, norm, M44, inv44, (!*), V4(V4))
 import qualified Linear.V4 as V4
@@ -149,27 +147,25 @@ cuboid (V3 (xmin, xmax) (ymin, ymax) (zmin, zmax)) = let
     , parallelogram (V3 xmin ymin zmin) dx dz -- bottom
     ]
 
--- TODO: Allow materials other than isotropic? (allowing pitchBlack in particular would be good for efficiency)
--- | Construct a constant-density medium (like fog or smoke).
+-- | Construct a constant-density medium (like fog or smoke). 
+-- Typical materials are 'Graphics.Material.isotropic' and 'Graphics.Material.pitchBlack'.
 constantMedium
   :: Double -- ^ Density 
-  -> Texture -- ^ Color
   -> Geometry Identity () -- ^ Surface (assumed to be convex in current implementation)
-  -> Geometry (State StdGen) Material
-constantMedium density tex (Geometry bbox hitObj) = let
+  -> Geometry (State StdGen) ()
+constantMedium density (Geometry bbox hitObj) = let
   negInvDensity = -(1 / density)
-  mat = isotropic tex
 
-  hitMedium :: Ray -> Interval -> State StdGen (Maybe (HitRecord, Material))
+  hitMedium :: Ray -> Interval -> State StdGen (Maybe (HitRecord, ()))
   hitMedium ray@(Ray orig dir) (tmin, tmax) = 
     case do (hit1, ()) <- runIdentity (hitObj ray (-infinity, infinity))
             (hit2, ()) <- runIdentity (hitObj ray (hr_t hit1, infinity))
             let t1 = max tmin (hr_t hit1)
             let t2 = min tmax (hr_t hit2)
             guard (t1 < t2)
-            Just (t1, t2, hr_uv hit1) of
+            Just (t1, t2, hit1) of
       Nothing -> pure Nothing -- ray is never in fog within interval
-      Just (t1, t2, uv) -> state random <&> \rand ->
+      Just (t1, t2, hit1) -> state random <&> \rand ->
          do let rayScale = norm dir
             let inDist = (t2 - t1) * rayScale
             let hitDist = negInvDensity * log rand
@@ -178,11 +174,11 @@ constantMedium density tex (Geometry bbox hitObj) = let
             let hit = HitRecord
                   { hr_t = t
                   , hr_point = orig + t *^ dir
-                  , hr_normal = undefined -- safe
-                  , hr_frontSide = undefined -- safe
-                  , hr_uv = uv
+                  , hr_normal = hr_normal hit1
+                  , hr_frontSide = hr_frontSide hit1
+                  , hr_uv = hr_uv hit1
                   }
-            Just (hit, mat)
+            Just (hit, ())
 
   in Geometry bbox hitMedium
 

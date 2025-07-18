@@ -4,10 +4,6 @@
 {-# LANGUAGE ViewPatterns #-}
 module Main where
 
-import Graphics.Ray.Core
-import Graphics.Ray.Material
-import Graphics.Ray.Texture
-import Graphics.Ray.Geometry
 import Graphics.Ray
 
 import Linear (V3(V3), (*^), normalize, norm, (!*!))
@@ -204,9 +200,8 @@ demo1 = let
   let (world, seed') = runState genWorld seed
   writeImageSqrt "test_image.png" $ raytrace settings world seed'
 
--- This should take less than 110 seconds
-cornellBox :: IO ()
-cornellBox = let
+cornellBox :: Int -> Int -> IO ()
+cornellBox samplesPerPixel maxRecurionDepth = let
   red = lambertian (constantTexture (V3 0.65 0.05 0.05))
   white = lambertian (constantTexture (V3 0.73 0.73 0.73))
   green = lambertian (constantTexture (V3 0.12 0.45 0.15))
@@ -226,8 +221,8 @@ cornellBox = let
   settings = defaultCameraSettings
     { cs_aspectRatio = 1.0
     , cs_imageWidth = 600
-    , cs_samplesPerPixel = 200
-    , cs_maxRecursionDepth = 50
+    , cs_samplesPerPixel = samplesPerPixel
+    , cs_maxRecursionDepth = maxRecurionDepth
     , cs_background = const (V3 0 0 0)
     , cs_vfov = degrees 40
     , cs_center = V3 278 278 (-800)
@@ -257,8 +252,8 @@ cornellSmoke = let
   
   world = group
     [ pureGeometry surfaces
-    , constantMedium 0.01 (constantTexture (V3 0 0 0)) cube1
-    , constantMedium 0.01 (constantTexture (V3 1 1 1)) cube2
+    , pitchBlack <$ constantMedium 0.01 cube1
+    , isotropic (constantTexture 1) <$ constantMedium 0.01 cube2
     ]
 
   settings = defaultCameraSettings
@@ -274,8 +269,8 @@ cornellSmoke = let
 
   in writeImageSqrt "cornell_smoke.png" . raytrace settings world =<< newStdGen
 
-demo2 :: Int -> Int -> Int -> IO ()
-demo2 imageWidth samplesPerPixel maxRecursionDepth = let
+demo2 :: FilePath -> Int -> Int -> Int -> IO ()
+demo2 path imageWidth samplesPerPixel maxRecursionDepth = let
   ground = lambertian (constantTexture (V3 0.48 0.83 0.53))
   white = lambertian (constantTexture (V3 0.73 0.73 0.73))
 
@@ -315,8 +310,8 @@ demo2 imageWidth samplesPerPixel maxRecursionDepth = let
     balls <- generateBalls
     pure $ group 
       [ pureGeometry (group (boxes : balls : largeObjects earth))
-      , constantMedium 0.0001 (constantTexture 1) (sphere (V3 0 0 0) 5000)
-      , constantMedium 0.2 (constantTexture (V3 0.2 0.4 0.9)) boundary
+      , isotropic (constantTexture 1) <$ constantMedium 0.0001 (sphere (V3 0 0 0) 5000)
+      , isotropic (constantTexture (V3 0.2 0.4 0.9)) <$ constantMedium 0.2 boundary
       ]
   
   settings = defaultCameraSettings
@@ -334,7 +329,15 @@ demo2 imageWidth samplesPerPixel maxRecursionDepth = let
     earth <- readImage "images/earthmap.jpg"
     seed <- newStdGen
     let (world, seed') = runState (generateWorld earth) seed
-    writeImageSqrt "demo2.png" (raytrace settings world seed')
+    writeImageSqrt path (raytrace settings world seed')
+
+-- This should take less than 110 seconds
+cornellTest :: IO ()
+cornellTest = cornellBox 200 50
+
+-- This should take less than 70 seconds
+demoTest :: IO ()
+demoTest = demo2 "test_image.png" 400 250 4
 
 main :: IO ()
-main = demo2 800 10000 40
+main = cornellBox 2000 50

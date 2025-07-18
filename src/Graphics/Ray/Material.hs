@@ -19,9 +19,10 @@ newtype Material = Material (Ray -> HitRecord -> State StdGen (Color, Maybe (Col
 -- | A material that emits light and does not reflect rays.
 lightSource :: Texture -> Material
 lightSource (Texture tex) = Material $
-  \_ (HitRecord {..}) -> pure (tex hr_point hr_uv, Nothing) 
+  \_ (HitRecord {..}) -> pure (tex hr_point hr_uv, Nothing)
 
--- | A material that absorbs all light.
+-- | A material that absorbs all light. Identical in principle to @'lambertian' ('constantTexture' 0)@, @'isotropic' ('constantTexture' 0)@,
+-- and so on, but avoids unecessary computation.
 pitchBlack :: Material
 pitchBlack = Material $ \ _ _ -> pure (zero, Nothing)
 
@@ -31,8 +32,7 @@ lambertian :: Texture -> Material
 lambertian (Texture tex) = Material $
   \_ (HitRecord {..}) -> do
     u <- randomUnitVector
-    -- TODO: make sure that ray direction is not too close to 0? (maybe by scaling u by 0.9999 or something)
-    pure (zero, Just (tex hr_point hr_uv, Ray hr_point (hr_normal + u)))
+    pure (zero, Just (tex hr_point hr_uv, Ray hr_point (hr_normal + 0.9999 *^ u)))
 
 -- | A colored mirror. (For no color, use @'constantTexture' 1@.)
 mirror :: Texture -> Material
@@ -57,7 +57,6 @@ refract iorRatio cosTheta normal u = let
   para = -(sqrt (abs (1 - quadrance perp)) *^ normal)
   in perp + para
 
--- TODO: reconsider name
 -- | A material that either reflects or refracts all incoming rays, like clear glass.
 -- The argument is the index of refraction relative to the surrounding medium.
 dielectric :: Double -> Material
@@ -87,7 +86,7 @@ transparent (Texture tex) = Material $
     pure (zero, Just (tex hr_point hr_uv, Ray hr_point dir))
 
 -- | A material that scatters an incoming ray in a direction chosen uniformly at random from the unit sphere. 
--- Used internally by 'Graphics.Ray.Geometry.constantMedium'.
+-- (Typically used with 'Graphics.Geometry.constantMedium'.)
 isotropic :: Texture -> Material
 isotropic (Texture tex) = Material $
   \_ (HitRecord {..}) -> do

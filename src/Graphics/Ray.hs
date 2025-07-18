@@ -167,7 +167,7 @@ writeImage path m = I.writeImageAuto path (A.map toPixel m)
     toPixel (V3 r g b) = C.Pixel (C.ColorSRGB r g b)
 
 -- | Write an array to an image file, using a slightly incorrect color space conversion function.
--- This function exists so that TODO
+-- This function exists for testing purposes.
 writeImageSqrt :: (A.Source r Color) => FilePath -> A.Matrix r Color -> IO ()
 writeImageSqrt path m = I.writeImageAuto path (A.map toPixel m)
   where
