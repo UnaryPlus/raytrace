@@ -11,7 +11,7 @@ Features:
 * Parallel computation of pixels
 * Bounding volume hierarchies
 * Affine transformations (rotation, translation, and so on)
-* Optional defocusing to imitate a real camera
+* Optional defocusing to simulate a real camera lens
 
 Possible future additions:
 * Motion blur
@@ -20,26 +20,43 @@ Possible future additions:
 
 ![Example](demo1.png)
 
-The image above, with 405 million top-level rays, was generated on my laptop in about 8 minutes.
+The image above, with 405 million top-level rays, was generated on my laptop in about 8 minutes. The blurriness in the foreground and background is due to defocusing, wherein only a single plane is in focus. The following image demonstrates texture mapping, light sources, and fog:
 
 ![Example](demo2.png)
 
+(The code for both of these images was based on code in the aforementioned books.)
+
 ## Example Usage
 
-```
-import Graphics.Ray
+```haskell
+module Main where
 
+import Graphics.Ray
+import Linear (V3(V3))
+import System.Random (newStdGen)
+import Data.Functor.Identity (Identity)
+
+world :: Geometry Identity Material
 world = group
-  [ lambertian <$ sphere (V3 0 0 0) 1
-  , lambertian <$ sphere (V3 0 (-1000) 0) 999
-  , mirror (constantTexture 1) <$ parallelogram
+  [ lambertian (checkerTexture 20 10 0.2 0.8) <$ sphere (V3 0 0 0) 1
+  , lambertian (constantTexture (V3 0 0.2 0.5)) <$ sphere (V3 0 (-1000) 0) 999
+  , mirror (constantTexture 0.8) <$ parallelogram (V3 (-3.25) (-1) (-0.75)) (V3 1.25 0 (-1.25)) (V3 0 2 0)
   ]
 
+settings :: CameraSettings
 settings = defaultCameraSettings
-  {
-
+  { cs_center = V3 (-0.75) 0 2
+  , cs_lookAt = V3 0 0 (-1)
+  , cs_aspectRatio = 16 / 9
+  , cs_imageWidth = 600
   }
 
 main :: IO ()
-main = writeImage "test_image.png" <$> raytrace settings world
+main = do
+  seed <- newStdGen
+  writeImage "example_image.png" (raytrace settings world seed)
 ```
+
+This produces the following image:
+
+![Example](example_image.png)

@@ -10,6 +10,7 @@ import Graphics.Ray.Noise
 import Linear (V2(V2), V3, (^*), (*^), dot)
 import qualified Data.Massiv.Array as A
 import Data.Massiv.Array (Ix2((:.)), (!))
+import Data.Bits ((.&.))
 
 newtype Texture = Texture (Point3 -> V2 Double -> Color)
 
@@ -39,14 +40,17 @@ imageTexture image = let
     in
     image ! (j :. i)
 
--- | Solid texture consisting of two colors arranged in a 3D checkerboard pattern.
--- The first argument is the side length of the cubes.
-checkerTexture :: Double -> Color -> Color -> Texture
-checkerTexture scale c1 c2 =
-  let invScale = 1 / scale in
-  solidTexture $ \p ->
-    let ns = fmap floor (p ^* invScale) :: V3 Int in
-    if even (sum ns) then c1 else c2
+-- | UV texture with two colors alternating in a checkerboard pattern. The first two arguments
+-- are the dimensions of the checkerboard.
+checkerTexture :: Int -> Int -> Color -> Color -> Texture
+checkerTexture n_u n_v c0 c1 = let
+  n_u' = fromIntegral n_u
+  n_v' = fromIntegral n_v
+  in
+  uvTexture $ \(V2 u v) -> let
+    i = floor (u * n_u')
+    j = floor (v * n_v')
+    in if (i + j) .&. 1 == (0 :: Int) then c0 else c1
 
 -- | Perlin noise texture.
 noiseTexture 
@@ -63,10 +67,13 @@ noiseTexture k freq shift color0 color1 = let
   in solidTexture $ \p -> color0 + diff ^* getNoise p
 
 -- | Texture with noisy black and white stripes, resulting in a marble-like appearance. 
--- The first argument is the direction of the stripes, and the second argument is the frequency.
-marbleTexture :: Vec3 -> Double -> Texture
-marbleTexture dir freq =
+marbleTexture 
+  :: Vec3 -- ^ Direction of stripes
+  -> Double -- ^ Frequency
+  -> V3 Double -- ^ Shift applied before calling noise function
+  -> Texture 
+marbleTexture dir freq shift =
   solidTexture $ \p -> let
     sinArg = freq * dot dir p
-    noise = 10 * turbulence 7 (0.25 * freq *^ p)
+    noise = 10 * turbulence 7 (0.25 * freq *^ p + shift)
     in 1 ^* (0.5 + 0.5 * sin (sinArg + noise))

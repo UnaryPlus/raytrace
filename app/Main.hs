@@ -51,34 +51,10 @@ metalTest = let
   seed <- newStdGen
   writeImageSqrt "test_image.png" $ raytrace settings world seed
 
-checkerTest :: IO ()
-checkerTest = let
-  checker = lambertian (checkerTexture 0.32 (V3 0.2 0.3 0.1) (V3 0.9 0.9 0.9))
-
-  world = group
-    [ checker <$ sphere (V3 0 (-10) 0) 10
-    , checker <$ sphere (V3 0 10 0) 10
-    ]
-  
-  settings = defaultCameraSettings
-    { cs_aspectRatio = 16 / 9
-    , cs_imageWidth = 400
-    , cs_samplesPerPixel = 100
-    , cs_maxRecursionDepth = 50
-    , cs_background = sky
-    , cs_vfov = degrees 20
-    , cs_center = V3 13 2 3
-    , cs_lookAt = V3 0 0 0
-    }
-
-  in do
-  seed <- newStdGen
-  writeImageSqrt "test_image.png" $ raytrace settings world seed
-
 noiseTest :: IO ()
 noiseTest = let
   groundMaterial = lambertian (noiseTexture 7 2.0 (V3 10 0 0) 0 1)
-  ballMaterial = lambertian (marbleTexture (V3 0 0 1) 4)
+  ballMaterial = lambertian (marbleTexture (V3 0 0 1) 4 0)
 
   world = group 
     [ groundMaterial <$ sphere (V3 0 (-1000) 0) 1000
@@ -302,7 +278,7 @@ demo2 path imageWidth samplesPerPixel maxRecursionDepth = let
     , dielectric 1.5 <$ boundary
     , metal 1.0 (constantTexture (V3 0.8 0.8 0.9)) <$ sphere (V3 0 150 145) 50
     , lambertian (imageTexture earth) <$ transform (translate (V3 400 0 400) !*! rotateY (pi/2)) (sphere (V3 0 200 0) 100)
-    , lambertian (marbleTexture (V3 0 0 0.05) 4) <$ sphere (V3 220 280 300) 80
+    , lambertian (marbleTexture (V3 0 0 0.05) 4 0) <$ sphere (V3 220 280 300) 80
     ]
   
   generateWorld earth = do
