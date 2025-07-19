@@ -19,7 +19,7 @@ maintainer:         ombspring@gmail.com
 
 build-type:         Simple
 
-extra-doc-files:    CHANGELOG.md, README.md, demo1.png, demo2.png, example_image.png
+extra-doc-files:    CHANGELOG.md, README.md
 
 library
     hs-source-dirs:   src

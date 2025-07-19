@@ -18,11 +18,11 @@ Possible future additions:
 * Triangular meshes
 * Less noise in scenes with small light sources
 
-![Example](demo1.png)
+![Example](https://raw.githubusercontent.com/UnaryPlus/raytrace/refs/heads/main/demo1.png)
 
 The image above, with 405 million top-level rays, was generated on my laptop in about 8 minutes. The blurriness in the foreground and background is due to defocusing, wherein only a single plane is in focus. The following image demonstrates texture mapping, light sources, and fog:
 
-![Example](demo2.png)
+![Example](https://raw.githubusercontent.com/UnaryPlus/raytrace/refs/heads/main/demo2.png)
 
 (The code for both of these images was based on code in the aforementioned books.)
 
@@ -60,4 +60,4 @@ main = do
 
 This produces the following image:
 
-![Example](example_image.png)
+![Example](https://raw.githubusercontent.com/UnaryPlus/raytrace/refs/heads/main/example_image.png)
