@@ -49,6 +49,7 @@ settings = defaultCameraSettings
   , cs_lookAt = V3 0 0 (-1)
   , cs_aspectRatio = 16 / 9
   , cs_imageWidth = 600
+  , cs_samplesPerPixel = 50
   }
 
 main :: IO ()
