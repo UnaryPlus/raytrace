@@ -2,8 +2,14 @@ cabal-version:      3.0
 name:               raytrace
 version:            0.1.0.0
 
+category:           Graphics
 synopsis:           Ray tracing library
-description:        See README.md
+description:        
+    A Haskell ray tracing library. 
+    Largely based on the books [Ray Tracing in One Weekend](https://raytracing.github.io/books/RayTracingInOneWeekend.html) 
+    and [Ray Tracing: The Next Week](https://raytracing.github.io/books/RayTracingTheNextWeek.html) by Peter Shirley.
+    
+    See README.md for more information.
 
 license:            BSD-3-Clause
 license-file:       LICENSE
