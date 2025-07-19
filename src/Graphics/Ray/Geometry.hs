@@ -28,7 +28,7 @@ import Data.Functor ((<&>))
 -- | A @'Geometry' m a@ has a bounding box (used in the implementation of bounding volume hierarchies),
 -- as well as a function that takes a ray and an interval, and in the @m@ monad, produces either @Nothing@
 -- (if the ray does not intersect the shape within that interval) or a tuple consisting of a 'HitRecord' and a value of type @a@.
--- Typically, @m@ is either 'Identity' or @'State' 'StdGen'@, and @a@ is either @()@ or 'Material'. Use the '(<$)' operator
+-- Typically, @m@ is either 'Identity' or @'State' 'StdGen'@, and @a@ is either @()@ or 'Geometry.Material.Material'. Use the '(<$)' operator
 -- to add a material to a geometry.
 data Geometry m a = Geometry Box (Ray -> Interval -> m (Maybe (HitRecord, a)))
 

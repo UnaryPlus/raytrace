@@ -53,15 +53,16 @@ data CameraSettings = CameraSettings
 
 -- | By default, the camera is positioned at the origin looking in the negative z direction, with the positive y direction being upward
 -- (and the positive x direction being rightward). The remaining attributes are as follows:
+-- 
 -- @
---   cs_vfov = pi / 2
---   cs_aspectRatio = 1.0
---   cs_imageWidth = 100
---   cs_samplesPerPixel = 10
---   cs_maxRecursionDepth = 10
---   cs_background = const (V3 1 1 1)
---   cs_defocusAngle = 0.0
---   cs_focusDist = 10.0
+-- cs_vfov = pi / 2
+-- cs_aspectRatio = 1.0
+-- cs_imageWidth = 100
+-- cs_samplesPerPixel = 10
+-- cs_maxRecursionDepth = 10
+-- cs_background = const (V3 1 1 1)
+-- cs_defocusAngle = 0.0
+-- cs_focusDist = 10.0
 -- @
 defaultCameraSettings :: CameraSettings
 defaultCameraSettings = CameraSettings
