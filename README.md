@@ -16,7 +16,7 @@ Features:
 Possible future additions:
 * Motion blur
 * Triangular meshes
-* ???
+* Less noise in scenes with small light sources
 
 ![Example](demo1.png)
 
