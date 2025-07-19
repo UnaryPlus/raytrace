@@ -61,8 +61,8 @@ noiseTexture
   -> Color -- ^ Color 2
   -> Texture
 noiseTexture k freq shift color0 color1 = let
-  invSqrt3 = 1 / sqrt 3
-  getNoise p = fractalNoise k (p ^* freq + shift) * invSqrt3 + 0.5 
+  scale = 0.5 / 0.8
+  getNoise p = fractalNoise k (p ^* freq + shift) * scale + 0.5 
   diff = color1 - color0
   in solidTexture $ \p -> color0 + diff ^* getNoise p
 

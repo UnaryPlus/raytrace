@@ -53,7 +53,7 @@ metalTest = let
 
 noiseTest :: IO ()
 noiseTest = let
-  groundMaterial = lambertian (noiseTexture 7 2.0 (V3 10 0 0) 0 1)
+  groundMaterial = lambertian (noiseTexture 2 2.0 (V3 10 0 0) 0 1)
   ballMaterial = lambertian (marbleTexture (V3 0 0 1) 4 0)
 
   world = group 
