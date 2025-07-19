@@ -30,8 +30,9 @@ library
 
     build-depends:    base ^>=4.17.2.1, linear, massiv, massiv-io, Color, random >= 1.3.0, mtl
 
-executable raytrace
-    hs-source-dirs:   app
+test-suite test
+    type:             exitcode-stdio-1.0
+    hs-source-dirs:   test
     default-language: Haskell2010
     ghc-options:      -Wall -threaded -rtsopts -with-rtsopts=-N
 
