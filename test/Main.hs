@@ -205,7 +205,7 @@ cornellBox samplesPerPixel maxRecurionDepth = let
     , cs_lookAt = V3 278 278 0
     }
 
-  in writeImageSqrt "cornell_box.png" . raytrace settings world =<< newStdGen
+  in writeImageSqrt "cornell_box.png" $ raytrace settings world (mkStdGen 234)
 
 cornellSmoke :: IO ()
 cornellSmoke = let
@@ -316,4 +316,4 @@ demoTest :: IO ()
 demoTest = demo2 "test_image.png" 400 250 4
 
 main :: IO ()
-main = noiseTest
+main = demoTest

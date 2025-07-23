@@ -25,7 +25,7 @@ import Graphics.Ray.Material
 import Graphics.Ray.Texture
 import Graphics.Ray.Noise
 
-import Linear (V2(V2), V3(V3), (*^), (^*), normalize, cross, (^/), zero)
+import Linear (V2(V2), V3(V3), (*^), (^*), normalize, cross, (^/), zero, quadrance, dot)
 import System.Random (StdGen, random, splitGen)
 import Data.Massiv.Array (B, D, S, U, Ix2((:.)), (!))
 import qualified Data.Massiv.Array as A
@@ -135,12 +135,35 @@ raytrace (CameraSettings {..}) (Geometry _ hitWorld) seed = let
     | otherwise =
     toRandom (hitWorld ray (0.0001, infinity)) >>= \case
       Nothing -> pure (cs_background ray)
-      Just (hit, Material mat) -> 
+      Just (hit, OldType mat) -> 
         mat ray hit >>= \case
           (emitted, Nothing) -> pure emitted
           (emitted, Just (attenuation, ray')) -> do
             c <- rayColor (depth - 1) ray'
             pure (emitted + attenuation * c)
+      Just (hit, NewType mat) -> do
+        let MaterialReturn {..} = mat ray hit
+        useLight <- state random
+        (dir, dist2) <- if useLight
+          then do 
+            (i, j) <- state random
+            let lightPt = V3 123 554 147 + i *^ V3 300 0 0 + j *^ V3 0 0 265
+            let toLight = lightPt - hr_point hit
+            let dist2 = quadrance toLight
+            pure (toLight ^/ sqrt dist2, dist2)
+          else do
+            dir <- mr_generate
+            let Geometry _ hitLight = parallelogram (V3 123 554 147) (V3 300 0 0) (V3 0 0 265)
+            let dist2 = case runIdentity (hitLight (Ray (hr_point hit) dir) (0, infinity)) of
+                  Nothing -> 0
+                  Just (HitRecord {hr_t = t}, _) -> t * t
+            pure (dir, dist2)
+        let pdf1 = mr_pdf dir
+        let pdf2 = dist2 / (abs (component Y dir) * 300 * 265)
+        let pdf = (pdf1 + pdf2) * 0.5
+        let mul = mr_multiplier dir ^/ pdf
+        c <- rayColor (depth - 1) (Ray (hr_point hit) dir)
+        pure (mul * c)
   
   pixelColor :: Int -> Int -> State StdGen Color
   pixelColor i j = do
