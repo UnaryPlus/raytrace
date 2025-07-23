@@ -49,6 +49,7 @@ data CameraSettings = CameraSettings
   , cs_defocusAngle :: Double -- ^ If this is positive, the image will be somewhat blurry in the foreground and background, 
                               -- with only a single plane in focus (like an image produced by a real camera)
   , cs_focusDist :: Double -- ^ Distance from the camera to the plane of focus (only matters if defocus angle is nonzero) 
+  , cs_redirectProb :: Double
   }
 
 -- | By default, the camera is positioned at the origin looking in the negative z direction, with the positive y direction being upward
@@ -77,6 +78,7 @@ defaultCameraSettings = CameraSettings
   , cs_background = const (V3 1 1 1)
   , cs_defocusAngle = 0.0
   , cs_focusDist = 10.0
+  , cs_redirectProb = 0
   }
 
 class ToRandom m where
@@ -158,8 +160,8 @@ raytrace (CameraSettings {..}) (Geometry _ hitWorld) seed = let
             pure (emitted + attenuation * c)
       Just (hit, NewType mat) -> do
         let MaterialReturn {..} = mat ray hit
-        useLight <- state random
-        (dir, dist2) <- if useLight
+        choose <- state random
+        (dir, dist2) <- if choose < cs_redirectProb
           then do 
             (i, j) <- state random
             let lightPt = lightORIGIN + i *^ lightU + j *^ lightV
@@ -175,8 +177,8 @@ raytrace (CameraSettings {..}) (Geometry _ hitWorld) seed = let
             pure (dir, dist2)
         let pdf1 = mr_pdf dir
         let pdf2 = dist2 / (abs (dot lightNORMAL dir) * lightAREA)
-        let pdf = (pdf1 + pdf2) * 0.5
-        let mul = mr_multiplier dir ^/ pdf
+        let pdf = pdf1 * (1 - cs_redirectProb) + pdf2 * cs_redirectProb
+        let mul = mr_multiplier dir ^/ pdf -- TODO: don't create ray if mr_multiplier is 0? 
         c <- rayColor (depth - 1) (Ray (hr_point hit) dir)
         pure (mul * c)
   

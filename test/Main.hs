@@ -203,6 +203,7 @@ cornellBox samplesPerPixel maxRecurionDepth = let
     , cs_vfov = degrees 40
     , cs_center = V3 278 278 (-800)
     , cs_lookAt = V3 278 278 0
+    , cs_redirectProb = 0.5
     }
 
   in writeImageSqrt "cornell_box.png" $ raytrace settings world (mkStdGen 234)
@@ -309,7 +310,7 @@ demo2 path imageWidth samplesPerPixel maxRecursionDepth = let
 
 -- This should take less than 110 seconds
 cornellTest :: IO ()
-cornellTest = cornellBox 200 50
+cornellTest = cornellBox 200 50 -- TODO: test with redirectProb = 0
 
 -- This should take less than 70 seconds
 demoTest :: IO ()
