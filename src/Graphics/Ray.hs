@@ -25,7 +25,7 @@ import Graphics.Ray.Material
 import Graphics.Ray.Texture
 import Graphics.Ray.Noise
 
-import Linear (V2(V2), V3(V3), (*^), (^*), normalize, cross, (^/), zero, quadrance, dot)
+import Linear (V2(V2), V3(V3), (*^), (^*), normalize, cross, (^/), zero, quadrance, dot, norm)
 import System.Random (StdGen, random, splitGen)
 import Data.Massiv.Array (B, D, S, U, Ix2((:.)), (!))
 import qualified Data.Massiv.Array as A
@@ -90,6 +90,21 @@ instance ToRandom (State StdGen) where
   toRandom :: State StdGen a -> State StdGen a
   toRandom = id
 
+cornellLight, demoLight :: (Point3, Vec3, Vec3)
+cornellLight = (V3 343 554 332, V3 (-130) 0 0, V3 0 0 (-105))
+demoLight = (V3 123 554 147, V3 300 0 0, V3 0 0 265)
+
+lightORIGIN :: Point3
+lightU, lightV :: Vec3
+(lightORIGIN, lightU, lightV) = cornellLight
+
+lightPARA :: Geometry Identity ()
+lightPARA = parallelogram lightORIGIN lightU lightV
+lightNORMAL :: Vec3
+lightNORMAL = normalize (cross lightU lightV)
+lightAREA :: Double
+lightAREA = norm (cross lightU lightV)
+
 -- | Produce an image from the given camera settings, world, and seed.
 raytrace :: ToRandom m => CameraSettings -> Geometry m Material -> StdGen -> A.Matrix D Color
 raytrace (CameraSettings {..}) (Geometry _ hitWorld) seed = let
@@ -147,19 +162,19 @@ raytrace (CameraSettings {..}) (Geometry _ hitWorld) seed = let
         (dir, dist2) <- if useLight
           then do 
             (i, j) <- state random
-            let lightPt = V3 123 554 147 + i *^ V3 300 0 0 + j *^ V3 0 0 265
+            let lightPt = lightORIGIN + i *^ lightU + j *^ lightV
             let toLight = lightPt - hr_point hit
             let dist2 = quadrance toLight
             pure (toLight ^/ sqrt dist2, dist2)
           else do
             dir <- mr_generate
-            let Geometry _ hitLight = parallelogram (V3 123 554 147) (V3 300 0 0) (V3 0 0 265)
+            let Geometry _ hitLight = lightPARA
             let dist2 = case runIdentity (hitLight (Ray (hr_point hit) dir) (0, infinity)) of
                   Nothing -> 0
                   Just (HitRecord {hr_t = t}, _) -> t * t
             pure (dir, dist2)
         let pdf1 = mr_pdf dir
-        let pdf2 = dist2 / (abs (component Y dir) * 300 * 265)
+        let pdf2 = dist2 / (abs (dot lightNORMAL dir) * lightAREA)
         let pdf = (pdf1 + pdf2) * 0.5
         let mul = mr_multiplier dir ^/ pdf
         c <- rayColor (depth - 1) (Ray (hr_point hit) dir)

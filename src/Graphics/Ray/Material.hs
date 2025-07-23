@@ -7,7 +7,7 @@ module Graphics.Ray.Material
 import Graphics.Ray.Core
 import Graphics.Ray.Texture
 
-import Linear (V3(V3), zero, normalize, dot, quadrance, (*^), (^*), (^/))
+import Linear (V3(V3), zero, normalize, dot, quadrance, (*^), (^*))
 import System.Random (StdGen, random)
 import Control.Monad.State (State, state)
 

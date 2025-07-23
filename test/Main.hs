@@ -316,4 +316,4 @@ demoTest :: IO ()
 demoTest = demo2 "test_image.png" 400 250 4
 
 main :: IO ()
-main = demoTest
+main = cornellBox 200 50
