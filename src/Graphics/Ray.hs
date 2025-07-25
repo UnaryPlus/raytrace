@@ -50,6 +50,7 @@ data CameraSettings = CameraSettings
                               -- with only a single plane in focus (like an image produced by a real camera)
   , cs_focusDist :: Double -- ^ Distance from the camera to the plane of focus (only matters if defocus angle is nonzero) 
   , cs_redirectProb :: Double
+  , cs_redirectTarget :: (Point3, Vec3, Vec3) -- TODO: replace with list?
   }
 
 -- | By default, the camera is positioned at the origin looking in the negative z direction, with the positive y direction being upward
@@ -79,6 +80,7 @@ defaultCameraSettings = CameraSettings
   , cs_defocusAngle = 0.0
   , cs_focusDist = 10.0
   , cs_redirectProb = 0
+  , cs_redirectTarget = undefined
   }
 
 class ToRandom m where
@@ -91,21 +93,6 @@ instance ToRandom Identity where
 instance ToRandom (State StdGen) where
   toRandom :: State StdGen a -> State StdGen a
   toRandom = id
-
-cornellLight, demoLight :: (Point3, Vec3, Vec3)
-cornellLight = (V3 343 554 332, V3 (-130) 0 0, V3 0 0 (-105))
-demoLight = (V3 123 554 147, V3 300 0 0, V3 0 0 265)
-
-lightORIGIN :: Point3
-lightU, lightV :: Vec3
-(lightORIGIN, lightU, lightV) = cornellLight
-
-lightPARA :: Geometry Identity ()
-lightPARA = parallelogram lightORIGIN lightU lightV
-lightNORMAL :: Vec3
-lightNORMAL = normalize (cross lightU lightV)
-lightAREA :: Double
-lightAREA = norm (cross lightU lightV)
 
 -- | Produce an image from the given camera settings, world, and seed.
 raytrace :: ToRandom m => CameraSettings -> Geometry m Material -> StdGen -> A.Matrix D Color
@@ -124,6 +111,10 @@ raytrace (CameraSettings {..}) (Geometry _ hitWorld) seed = let
   topLeft = cs_center - w ^* cs_focusDist - across ^/ 2 - down ^/ 2
   pixelU = across ^/ fromIntegral cs_imageWidth
   pixelV = down ^/ fromIntegral imageHeight
+
+  (lightOrigin, lightU, lightV) = cs_redirectTarget
+  lightPara = parallelogram lightOrigin lightU lightV
+  lightNormal = cross lightU lightV -- unit normal times area of parallelogram
 
   defocusRadius = cs_focusDist * tan (cs_defocusAngle / 2)
   defocusDiskU = u ^* defocusRadius
@@ -164,21 +155,21 @@ raytrace (CameraSettings {..}) (Geometry _ hitWorld) seed = let
         (dir, dist2) <- if choose < cs_redirectProb
           then do 
             (i, j) <- state random
-            let lightPt = lightORIGIN + i *^ lightU + j *^ lightV
+            let lightPt = lightOrigin + i *^ lightU + j *^ lightV
             let toLight = lightPt - hr_point hit
             let dist2 = quadrance toLight
             pure (toLight ^/ sqrt dist2, dist2)
           else do
             dir <- mr_generate
-            let Geometry _ hitLight = lightPARA
+            let Geometry _ hitLight = lightPara
             let dist2 = case runIdentity (hitLight (Ray (hr_point hit) dir) (0, infinity)) of
                   Nothing -> 0
                   Just (HitRecord {hr_t = t}, _) -> t * t
             pure (dir, dist2)
         let pdf1 = mr_pdf dir
-        let pdf2 = dist2 / (abs (dot lightNORMAL dir) * lightAREA)
+        let pdf2 = dist2 / abs (dot lightNormal dir)
         let pdf = pdf1 * (1 - cs_redirectProb) + pdf2 * cs_redirectProb
-        let mul = mr_multiplier dir ^/ pdf -- TODO: don't create ray if mr_multiplier is 0? 
+        let mul = mr_multiplier dir ^/ pdf
         c <- rayColor (depth - 1) (Ray (hr_point hit) dir)
         pure (mul * c)
   

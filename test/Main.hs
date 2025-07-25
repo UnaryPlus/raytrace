@@ -203,7 +203,8 @@ cornellBox samplesPerPixel maxRecurionDepth = let
     , cs_vfov = degrees 40
     , cs_center = V3 278 278 (-800)
     , cs_lookAt = V3 278 278 0
-    , cs_redirectProb = 0.5
+    , cs_redirectProb = 0.25
+    , cs_redirectTarget = (,,) (V3 343 554 332) (V3 (-130) 0 0) (V3 0 0 (-105))
     }
 
   in writeImageSqrt "cornell_box.png" $ raytrace settings world (mkStdGen 234)
@@ -271,9 +272,10 @@ demo2 path imageWidth samplesPerPixel maxRecursionDepth = let
       pure (sphere p 10)
   
   boundary = sphere (V3 360 150 145) 70 
+  light f = f (V3 123 554 147) (V3 300 0 0) (V3 0 0 265)
   
   largeObjects earth =
-    [ lightSource (constantTexture (V3 7 7 7)) <$ parallelogram (V3 123 554 147) (V3 300 0 0) (V3 0 0 265)
+    [ lightSource (constantTexture (V3 7 7 7)) <$ light parallelogram
     , lambertian (constantTexture (V3 0.7 0.3 0.1)) <$ sphere (V3 415 400 200) 50
     , dielectric 1.5 <$ sphere (V3 260 150 45) 50
     , dielectric 1.5 <$ boundary
@@ -300,6 +302,8 @@ demo2 path imageWidth samplesPerPixel maxRecursionDepth = let
     , cs_samplesPerPixel = samplesPerPixel
     , cs_maxRecursionDepth = maxRecursionDepth
     , cs_background = const 0
+    , cs_redirectProb = 0.25
+    , cs_redirectTarget = light (,,) 
     }
 
   in do
@@ -308,13 +312,13 @@ demo2 path imageWidth samplesPerPixel maxRecursionDepth = let
     let (world, seed') = runState (generateWorld earth) seed
     writeImageSqrt path (raytrace settings world seed')
 
--- This should take less than 110 seconds
+-- This should take less than 110 seconds without redirection
 cornellTest :: IO ()
-cornellTest = cornellBox 200 50 -- TODO: test with redirectProb = 0
+cornellTest = cornellBox 200 50
 
--- This should take less than 70 seconds
+-- This should take less than 70 seconds without redirection
 demoTest :: IO ()
 demoTest = demo2 "test_image.png" 400 250 4
 
 main :: IO ()
-main = cornellBox 200 50
+main = demoTest
