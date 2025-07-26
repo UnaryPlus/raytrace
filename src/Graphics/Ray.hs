@@ -113,7 +113,7 @@ raytrace (CameraSettings {..}) (Geometry _ hitWorld) seed = let
   pixelV = down ^/ fromIntegral imageHeight
 
   (lightOrigin, lightU, lightV) = cs_redirectTarget
-  lightPara = parallelogram lightOrigin lightU lightV
+  Geometry _ hitLight = parallelogram lightOrigin lightU lightV
   lightNormal = cross lightU lightV -- unit normal times area of parallelogram
 
   defocusRadius = cs_focusDist * tan (cs_defocusAngle / 2)
@@ -161,14 +161,13 @@ raytrace (CameraSettings {..}) (Geometry _ hitWorld) seed = let
             pure (toLight ^/ sqrt dist2, dist2)
           else do
             dir <- mr_generate
-            let Geometry _ hitLight = lightPara
             let dist2 = case runIdentity (hitLight (Ray (hr_point hit) dir) (0, infinity)) of
                   Nothing -> 0
                   Just (HitRecord {hr_t = t}, _) -> t * t
             pure (dir, dist2)
         let pdf1 = mr_pdf dir
         let pdf2 = dist2 / abs (dot lightNormal dir)
-        let pdf = pdf1 * (1 - cs_redirectProb) + pdf2 * cs_redirectProb
+        let pdf = if cs_redirectProb == 0 then pdf1 else pdf1 * (1 - cs_redirectProb) + pdf2 * cs_redirectProb -- TODO: better optimization?
         let mul = mr_multiplier dir ^/ pdf
         c <- rayColor (depth - 1) (Ray (hr_point hit) dir)
         pure (mul * c)

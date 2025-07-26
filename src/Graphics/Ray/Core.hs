@@ -16,7 +16,7 @@ import System.Random (RandomGen, randomR)
 import Control.Monad.State (MonadState, state)
 import Control.Applicative (liftA2)
 import Data.Maybe (isJust)
-import Data.Foldable (foldl')
+import Data.List (foldl1')
 
 -- | Floating-point infinity.
 infinity :: Double
@@ -114,16 +114,20 @@ type Box = V3 Interval
 fromCorners :: Point3 -> Point3 -> Box
 fromCorners = liftA2 (\x y -> if x < y then (x, y) else (y, x))
 
--- | The smallest box containing two boxes.
-boxJoin :: Box -> Box -> Box
-boxJoin = liftA2 (\(min1, max1) (min2, max2) -> (min min1 min2, max max1 max2))
-
 -- | The smallest box containing all of the boxes.
-boxHull :: [Box] -> Box
-boxHull = foldl' boxJoin (V3 (infinity, -infinity) (infinity, -infinity) (infinity, -infinity))
+boxJoin :: [Box] -> Box
+boxJoin = foldl1' (liftA2 (\(min1, max1) (min2, max2) -> (min min1 min2, max max1 max2))) 
+
+-- | The smallest box containing all of the points.
+boxHull :: [Point3] -> Box
+boxHull pts = let
+  coords = sequence pts
+  mins = fmap minimum coords
+  maxs = fmap maximum coords
+  in liftA2 (,) mins maxs
 
 -- | Get a list of all eight corners of a box.
-allCorners :: Box -> [ Point3 ]
+allCorners :: Box -> [Point3]
 allCorners (V3 i1 i2 i3) = 
   [ V3 (f1 i1) (f2 i2) (f3 i3) 
   | f1 <- [ fst, snd ], f2 <- [ fst, snd ], f3 <- [ fst, snd ]

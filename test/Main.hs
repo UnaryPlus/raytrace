@@ -312,6 +312,18 @@ demo2 path imageWidth samplesPerPixel maxRecursionDepth = let
     let (world, seed') = runState (generateWorld earth) seed
     writeImageSqrt path (raytrace settings world seed')
 
+pawnTest :: IO ()
+pawnTest = let
+  world mesh = lambertian (checkerTexture 2 2 0.2 0.7) <$ bvhTree (autoTree (triangleMesh mesh))
+  settings = defaultCameraSettings 
+    { cs_center = V3 0 0.025 0.05
+    , cs_imageWidth = 500
+    , cs_samplesPerPixel = 200
+    }
+  in do
+  mesh <- readObj "images/pawn.obj"
+  writeImage "test_image.png" (raytrace settings (world mesh) (mkStdGen 55))
+
 -- This should take less than 110 seconds without redirection
 cornellTest :: IO ()
 cornellTest = cornellBox 200 50
@@ -321,4 +333,4 @@ demoTest :: IO ()
 demoTest = demo2 "test_image.png" 400 250 4
 
 main :: IO ()
-main = demoTest
+main = pawnTest
