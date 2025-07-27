@@ -35,16 +35,16 @@ import Data.Char (isDigit)
 -- (if the ray does not intersect the shape within that interval) or a tuple consisting of a 'HitRecord' and a value of type @a@.
 -- Typically, @m@ is either 'Identity' or @'State' 'StdGen'@, and @a@ is either @()@ or 'Geometry.Material.Material'. Use the '(<$)' operator
 -- to add a material to a geometry.
-data Geometry m a = Geometry Box (Ray -> Interval -> m (Maybe (HitRecord, a)))
+data Geometry m a = Geometry Box (Double -> Ray -> Interval -> m (Maybe (HitRecord, a)))
 
 instance Functor m => Functor (Geometry m) where
   {-# SPECIALISE fmap :: (a -> b) -> Geometry Identity a -> Geometry Identity b #-}
   fmap :: (a -> b) -> Geometry m a -> Geometry m b
-  fmap f (Geometry bbox hit) = Geometry bbox (\ray ival -> fmap (fmap (second f)) (hit ray ival))
+  fmap f (Geometry bbox hit) = Geometry bbox (\ray time ival -> fmap (fmap (second f)) (hit ray time ival))
 
 -- | Promote a pure geometry to a monadic one.
 pureGeometry :: Applicative m => Geometry Identity a -> Geometry m a
-pureGeometry (Geometry bbox f) = Geometry bbox (\ray ival -> pure (runIdentity (f ray ival)))
+pureGeometry (Geometry bbox f) = Geometry bbox (\ray time ival -> pure (runIdentity (f ray time ival)))
 
 -- | Get a geometry's bounding box.
 boundingBox :: Geometry m a -> Box
@@ -56,7 +56,7 @@ sphere center radius = let
   diag = V3 radius radius radius
   bbox = fromCorners (center - diag) (center + diag)
 
-  hitSphere (Ray orig dir) bounds = Identity $ do
+  hitSphere _ (Ray orig dir) bounds = Identity $ do
     let oc = center - orig
     let a = quadrance dir
     let h = dot dir oc 
@@ -112,7 +112,7 @@ parallelogram q u v = let
 
   bbox = padBox 0.0001 $ boxHull [ q, q + u, q + v, q + u + v ]
   
-  hitParallelogram (Ray orig dir) bounds = Identity $ do
+  hitParallelogram _ (Ray orig dir) bounds = Identity $ do
     let denom = dot normal dir
     guard (abs denom > 1e-8)
     let t = (n_dot_q - dot normal orig) / denom
@@ -165,7 +165,7 @@ triangle (p0, uv0) (p1, uv1) (p2, uv2) = let
 
   bbox = padBox 0.0001 $ boxHull [ p0, p1, p2 ]
 
-  hitTriangle (Ray orig dir) bounds = Identity $ do
+  hitTriangle _ (Ray orig dir) bounds = Identity $ do
     -- TODO: create helper function for this and parallelogram
     let denom = dot normal dir
     guard (abs denom > 1e-8)
@@ -281,10 +281,10 @@ constantMedium
 constantMedium density (Geometry bbox hitObj) = let
   negInvDensity = -(1 / density)
 
-  hitMedium :: Ray -> Interval -> State StdGen (Maybe (HitRecord, ()))
-  hitMedium ray@(Ray orig dir) (tmin, tmax) = 
-    case do (hit1, ()) <- runIdentity (hitObj ray (-infinity, infinity))
-            (hit2, ()) <- runIdentity (hitObj ray (hr_t hit1, infinity))
+  hitMedium :: Double -> Ray -> Interval -> State StdGen (Maybe (HitRecord, ()))
+  hitMedium time ray@(Ray orig dir) (tmin, tmax) = 
+    case do (hit1, ()) <- runIdentity (hitObj time ray (-infinity, infinity))
+            (hit2, ()) <- runIdentity (hitObj time ray (hr_t hit1, infinity))
             let t1 = max tmin (hr_t hit1)
             let t2 = min tmax (hr_t hit2)
             guard (t1 < t2)
@@ -314,10 +314,10 @@ constantMedium density (Geometry bbox hitObj) = let
 group :: Monad m => [Geometry m a] -> Geometry m a
 group obs = let
   bbox = boxJoin (map boundingBox obs)
-  
-  hitGroup ray (tmin, tmax) =
+
+  hitGroup ray time (tmin, tmax) =
     let try (tmax', knownHit) (Geometry _ hitObj) =
-          hitObj ray (tmin, tmax') <&> \case
+          hitObj ray time (tmin, tmax') <&> \case
             Nothing -> (tmax', knownHit)
             Just (hit, mat) -> (hr_t hit, Just (hit, mat))
     in snd <$> foldM try (tmax, Nothing) obs
@@ -331,11 +331,11 @@ bvhNode :: Monad m => Geometry m a -> Geometry m a -> Geometry m a
 bvhNode (Geometry bboxLeft hitLeft) (Geometry bboxRight hitRight) = let
   bbox = boxJoin [bboxLeft, bboxRight]
 
-  hitBvhNode ray (tmin, tmax)
+  hitBvhNode time ray (tmin, tmax)
     | overlapsBox bbox ray (tmin, tmax) = 
-      hitLeft ray (tmin, tmax) >>= \case
-        Nothing -> hitRight ray (tmin, tmax)
-        res@(Just (hit, _)) -> fmap (<|> res) (hitRight ray (tmin, hr_t hit))
+      hitLeft time ray (tmin, tmax) >>= \case
+        Nothing -> hitRight time ray (tmin, tmax)
+        res@(Just (hit, _)) -> fmap (<|> res) (hitRight time ray (tmin, hr_t hit))
     | otherwise = pure Nothing
   
   in Geometry bbox hitBvhNode
@@ -370,9 +370,9 @@ transform m (Geometry bbox hitObj) = let
   inv_m = dropLast (inv44 m)
   cornerCoords = mapM ((m34 !*) . V4.point) (allCorners bbox) :: V3 [Double]
   bbox' = fromCorners (fmap minimum cornerCoords) (fmap maximum cornerCoords) -- TODO: rewrite in terms of new boxHull function
-  in Geometry bbox' $ \(Ray orig dir) ival ->
+  in Geometry bbox' $ \time (Ray orig dir) ival ->
     let ray' = Ray (inv_m !* V4.point orig) (inv_m !* V4.vector dir) in
-    flip (fmap . fmap . first) (hitObj ray' ival) $ \hit@(HitRecord {..}) ->
+    flip (fmap . fmap . first) (hitObj time ray' ival) $ \hit@(HitRecord {..}) ->
       hit { hr_point = m34 !* V4.point hr_point, hr_normal = m34 !* V4.vector hr_normal }
 
 -- | Translation.

@@ -137,17 +137,17 @@ raytrace (CameraSettings {..}) (Geometry _ hitWorld) seed = let
     target <- samplePixel i j
     pure (Ray origin (target - origin))
 
-  rayColor :: Int -> Ray -> State StdGen Color
-  rayColor depth ray
+  rayColor :: Int -> Double -> Ray -> State StdGen Color
+  rayColor depth time ray
     | depth <= 0 = pure zero
     | otherwise =
-    toRandom (hitWorld ray (0.0001, infinity)) >>= \case
+    toRandom (hitWorld time ray (0.0001, infinity)) >>= \case
       Nothing -> pure (cs_background ray)
       Just (hit, OldType mat) -> 
         mat ray hit >>= \case
           (emitted, Nothing) -> pure emitted
           (emitted, Just (attenuation, ray')) -> do
-            c <- rayColor (depth - 1) ray'
+            c <- rayColor (depth - 1) time ray'
             pure (emitted + attenuation * c)
       Just (hit, NewType mat) -> do
         let MaterialReturn {..} = mat ray hit
@@ -161,7 +161,7 @@ raytrace (CameraSettings {..}) (Geometry _ hitWorld) seed = let
             pure (toLight ^/ sqrt dist2, dist2)
           else do
             dir <- mr_generate
-            let dist2 = case runIdentity (hitLight (Ray (hr_point hit) dir) (0, infinity)) of
+            let dist2 = case runIdentity (hitLight undefined (Ray (hr_point hit) dir) (0, infinity)) of
                   Nothing -> 0
                   Just (HitRecord {hr_t = t}, _) -> t * t
             pure (dir, dist2)
@@ -169,12 +169,15 @@ raytrace (CameraSettings {..}) (Geometry _ hitWorld) seed = let
         let pdf2 = dist2 / abs (dot lightNormal dir)
         let pdf = if cs_redirectProb == 0 then pdf1 else pdf1 * (1 - cs_redirectProb) + pdf2 * cs_redirectProb -- TODO: better optimization?
         let mul = mr_multiplier dir ^/ pdf
-        c <- rayColor (depth - 1) (Ray (hr_point hit) dir)
+        c <- rayColor (depth - 1) time (Ray (hr_point hit) dir)
         pure (mul * c)
   
   pixelColor :: Int -> Int -> State StdGen Color
   pixelColor i j = do
-    colors <- replicateM cs_samplesPerPixel (getRay i j >>= rayColor cs_maxRecursionDepth)
+    colors <- replicateM cs_samplesPerPixel $ do
+      time <- state random
+      ray <- getRay i j 
+      rayColor cs_maxRecursionDepth time ray
     pure (sum colors ^/ fromIntegral cs_samplesPerPixel)
 
   -- array of random seeds for each pixel (constructed using splitGen)
