@@ -100,28 +100,24 @@ sphereUV (V3 x y z) = V2 u v
     u = atan2 x z / (2 * pi) + 0.5
     v = acos (-y) / pi 
 
--- | Construct a parallelogram from a corner point and two edge vectors.
--- Which side is the \"front side\" is determined by the right hand rule.
-parallelogram :: Point3 -> Vec3 -> Vec3 -> Geometry Identity ()
-parallelogram q u v = let
+-- TODO: export?
+planeShape :: Point3 -> Vec3 -> Vec3 -> (Double -> Double -> Bool) -> (Double -> Double -> V2 Double) -> Box -> Geometry Identity ()
+planeShape q u v test getUV bbox = let
   cp = cross u v
-  area = norm cp
-  normal = cp ^/ area
-  normalS = normal ^/ area
-  n_dot_q = dot normal q
+  norm_cp = norm cp
+  normal = cp ^/ norm_cp
+  normalS = normal ^/ norm_cp
 
-  bbox = padBox 0.0001 $ boxHull [ q, q + u, q + v, q + u + v ]
-  
-  hitParallelogram _ (Ray orig dir) bounds = Identity $ do
+  hitShape _ (Ray orig dir) bounds = Identity $ do
     let denom = dot normal dir
     guard (abs denom > 1e-8)
-    let t = (n_dot_q - dot normal orig) / denom
+    let t = dot normal (q - orig) / denom
     guard (inInterval bounds t)
     let p = orig + t *^ dir
     let p_rel = p - q
     let a = normalS `dot` (p_rel `cross` v)
     let b = normalS `dot` (u `cross` p_rel)
-    guard (0 <= a && a <= 1 && 0 <= b && b <= 1)
+    guard (test a b)
     let frontSide = denom < 0
 
     let hit = HitRecord
@@ -129,11 +125,19 @@ parallelogram q u v = let
           , hr_point = p
           , hr_normal = if frontSide then normal else -normal
           , hr_frontSide = frontSide
-          , hr_uv = V2 a b
+          , hr_uv = getUV a b
           }
     Just (hit, ())
 
-  in Geometry bbox hitParallelogram 
+  in Geometry (padBox 0.0001 bbox) hitShape
+
+-- | Construct a parallelogram from a corner point and two edge vectors.
+-- Which side is the \"front side\" is determined by the right hand rule.
+parallelogram :: Point3 -> Vec3 -> Vec3 -> Geometry Identity ()
+parallelogram q u v = let
+  bbox = boxHull [ q, q + u, q + v, q + u + v ] 
+  test a b = 0 <= a && a <= 1 && 0 <= b && b <= 1
+  in planeShape q u v test V2 bbox
 
 -- | Construct an axis-aligned rectangular cuboid (implemented as a 'group' of parallelograms).
 cuboid :: Box -> Geometry Identity ()
@@ -150,44 +154,14 @@ cuboid (V3 (xmin, xmax) (ymin, ymax) (zmin, zmax)) = let
     , parallelogram (V3 xmin ymin zmin) dx dz -- bottom
     ]
 
--- TODO: interpolated normals?
 triangle :: (Point3, V2 Double) -> (Point3, V2 Double) -> (Point3, V2 Double) -> Geometry Identity ()
 triangle (p0, uv0) (p1, uv1) (p2, uv2) = let
   s1 = p1 - p0
   s2 = p2 - p0
-
-  cp = cross s1 s2
-  norm_cp = norm cp
-  normal = cp ^/ norm_cp
-  normalS = normal ^/ norm_cp
-
-  n_dot_p0 = dot normal p0
-
-  bbox = padBox 0.0001 $ boxHull [ p0, p1, p2 ]
-
-  hitTriangle _ (Ray orig dir) bounds = Identity $ do
-    -- TODO: create helper function for this and parallelogram
-    let denom = dot normal dir
-    guard (abs denom > 1e-8)
-    let t = (n_dot_p0 - dot normal orig) / denom
-    guard (inInterval bounds t)
-    let p = orig + t *^ dir
-    let p_rel = p - p0
-    let a = normalS `dot` (p_rel `cross` s2)
-    let b = normalS `dot` (s1 `cross` p_rel)
-    guard (a >= 0 && b >= 0 && a + b <= 1)
-    let frontSide = denom < 0
-
-    let hit = HitRecord
-          { hr_t = t
-          , hr_point = p
-          , hr_normal = if frontSide then normal else -normal
-          , hr_frontSide = frontSide
-          , hr_uv = (1 - a - b) *^ uv0 + a *^ uv1 + b *^ uv2
-          }
-    Just (hit, ())
-
-  in Geometry bbox hitTriangle
+  bbox = boxHull [ p0, p1, p2 ]
+  test a b = a >= 0 && b >= 0 && a + b <= 1
+  getUV a b = (1 - a - b) *^ uv0 + a *^ uv1 + b *^ uv2
+  in planeShape p0 s1 s2 test getUV bbox
 
 -- TODO: make sure that all functions that should be exported are exported
 
@@ -369,8 +343,8 @@ transform :: Functor m => M44 Double -> Geometry m a -> Geometry m a
 transform m (Geometry bbox hitObj) = let
   m34 = dropLast m
   inv_m = dropLast (inv44 m)
-  cornerCoords = mapM ((m34 !*) . V4.point) (allCorners bbox) :: V3 [Double]
-  bbox' = fromCorners (fmap minimum cornerCoords) (fmap maximum cornerCoords) -- TODO: rewrite in terms of new boxHull function
+  corners = map ((m34 !*) . V4.point) (allCorners bbox)
+  bbox' = boxHull corners
   in Geometry bbox' $ \time (Ray orig dir) ival ->
     let ray' = Ray (inv_m !* V4.point orig) (inv_m !* V4.vector dir) in
     flip (fmap . fmap . first) (hitObj time ray' ival) $ \hit@(HitRecord {..}) ->
