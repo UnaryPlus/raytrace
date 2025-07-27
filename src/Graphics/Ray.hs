@@ -26,7 +26,7 @@ import Graphics.Ray.Texture
 import Graphics.Ray.Noise
 
 import Linear (V2(V2), V3(V3), (*^), (^*), normalize, cross, (^/), zero, quadrance, dot, norm)
-import System.Random (StdGen, random, splitGen)
+import System.Random (StdGen, random, splitGen, randomR)
 import Data.Massiv.Array (B, D, S, U, Ix2((:.)), (!))
 import qualified Data.Massiv.Array as A
 import qualified Data.Massiv.Array.IO as I

@@ -10,7 +10,7 @@ module Graphics.Ray.Geometry
     -- * Groups
   , group, bvhNode, Tree(Leaf, Node), bvhTree, autoTree
     -- * Transformations
-  , transform, translate, rotateX, rotateY, rotateZ
+  , transform, translate, rotateX, rotateY, rotateZ, moving
   ) where
 
 import Graphics.Ray.Core
@@ -364,6 +364,7 @@ autoTree = \case
 
 -- | Apply an affine transformation (represented as a 4 by 4 matrix whose bottom row is 0 0 0 1) to a geometric object.
 -- TODO: NOT ALL AFFINE TRANSFORMATIONS ARE VALID (MUST BE EUCLIDEAN FOR NORMAL TO STAY NORMAL?)
+-- TODO: would this benefit from specialization?
 transform :: Functor m => M44 Double -> Geometry m a -> Geometry m a
 transform m (Geometry bbox hitObj) = let
   m34 = dropLast m
@@ -419,3 +420,12 @@ rotateZ angle = V4
 -- [private]
 dropLast :: V4 a -> V3 a
 dropLast (V4 x y z _) = V3 x y z
+
+moving :: Functor m => Vec3 -> Vec3 -> Geometry m a -> Geometry m a
+moving v0 v1 (Geometry bbox hitObj) =
+  let bbox' = boxJoin [shiftBox v0 bbox, shiftBox v1 bbox] in
+  Geometry bbox' $ \time (Ray orig dir) ival -> let
+    shift = (1 - time) *^ v0 + time *^ v1
+    ray' = Ray (orig - shift) dir
+    in flip (fmap . fmap . first) (hitObj time ray' ival) $ \hit -> 
+      hit { hr_point = hr_point hit + shift }

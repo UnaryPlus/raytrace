@@ -6,7 +6,7 @@ module Graphics.Ray.Core
     -- * Intervals
   , Interval, inInterval, midpoint, padInterval
     -- * Boxes
-  , Box, fromCorners, boxJoin, boxHull, allCorners, padBox, longestDim, overlapsBox
+  , Box, fromCorners, boxJoin, boxHull, allCorners, padBox, shiftBox, longestDim, overlapsBox
     -- * Hit Records
   , HitRecord(..)
   ) where
@@ -136,6 +136,9 @@ allCorners (V3 i1 i2 i3) =
 -- | Extend the box by the first argument in all six directions.
 padBox :: Double -> Box -> Box
 padBox padding = fmap (padInterval padding)
+
+shiftBox :: Vec3 -> Box -> Box
+shiftBox = liftA2 (\x (a, b) -> (a + x, b + x))
 
 -- | The dimension in which the box is the longest.
 longestDim :: Box -> Dim

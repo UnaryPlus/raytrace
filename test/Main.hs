@@ -276,7 +276,7 @@ demo2 path imageWidth samplesPerPixel maxRecursionDepth = let
   
   largeObjects earth =
     [ lightSource (constantTexture (V3 7 7 7)) <$ light parallelogram
-    , lambertian (constantTexture (V3 0.7 0.3 0.1)) <$ sphere (V3 415 400 200) 50
+    , lambertian (constantTexture (V3 0.7 0.3 0.1)) <$ moving 0 (V3 30 0 0) (sphere (V3 400 400 200) 50)
     , dielectric 1.5 <$ sphere (V3 260 150 45) 50
     , dielectric 1.5 <$ boundary
     , metal 1.0 (constantTexture (V3 0.8 0.8 0.9)) <$ sphere (V3 0 150 145) 50
@@ -333,4 +333,4 @@ demoTest :: IO ()
 demoTest = demo2 "test_image.png" 400 250 4
 
 main :: IO ()
-main = pawnTest
+main = demo2 "test_image.png" 400 1000 4
