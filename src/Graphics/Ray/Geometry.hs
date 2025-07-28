@@ -6,7 +6,7 @@ module Graphics.Ray.Geometry
   ( -- * Geometry
     Geometry(Geometry), pureGeometry, boundingBox
     -- * Surfaces and Volumes (TODO: move meshes into another section?)
-  , sphere, planeShape, parallelogram, cuboid, triangle, Mesh(Mesh), readObj, triangleMesh, constantMedium
+  , sphere, planeShape, parallelogram, cuboid, triangle, Mesh(Mesh), readObj, parseObj, triangleMesh, constantMedium
     -- * Groups
   , group, bvhNode, Tree(Leaf, Node), bvhTree, autoTree
     -- * Transformations
@@ -24,7 +24,7 @@ import Control.Monad.State (State, state)
 import Control.Monad (guard, foldM)
 import Control.Applicative ((<|>))
 import Data.List (sortOn)
-import Data.Bifunctor (first, second, bimap)
+import Data.Bifunctor (first, second)
 import Data.Functor.Identity (Identity(Identity), runIdentity)
 import Data.Functor ((<&>))
 import Text.Read (readMaybe)
@@ -167,7 +167,7 @@ triangle (p0, uv0) (p1, uv1) (p2, uv2) = let
 data Mesh = Mesh (A.Vector U Point3) (A.Vector U (V2 Double)) [V3 (Int, Maybe Int)]
 
 readObj :: FilePath -> IO (Either String Mesh)
-readObj path = parseObj <$> readFile path
+readObj path = first ((path ++ ", ") ++) . parseObj <$> readFile path
 
 -- [private] 
 -- TODO: add vertex transformation parameter
