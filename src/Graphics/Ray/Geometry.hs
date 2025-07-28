@@ -29,6 +29,7 @@ import Data.Functor.Identity (Identity(Identity), runIdentity)
 import Data.Functor ((<&>))
 import Text.Read (readMaybe)
 import Data.Char (isDigit)
+import GHC.Exts (inline)
 
 -- | A @'Geometry' m a@ has a bounding box (used in the implementation of bounding volume hierarchies),
 -- as well as a function that takes a ray and an interval, and in the @m@ monad, produces either @Nothing@
@@ -136,7 +137,7 @@ parallelogram :: Point3 -> Vec3 -> Vec3 -> Geometry Identity ()
 parallelogram q u v = let
   bbox = boxHull [ q, q + u, q + v, q + u + v ] 
   test a b = 0 <= a && a <= 1 && 0 <= b && b <= 1
-  in planeShape q u v test V2 bbox
+  in inline planeShape q u v test V2 bbox
 
 -- | Construct an axis-aligned rectangular cuboid (implemented as a 'group' of parallelograms).
 cuboid :: Box -> Geometry Identity ()
@@ -160,7 +161,7 @@ triangle (p0, uv0) (p1, uv1) (p2, uv2) = let
   bbox = boxHull [ p0, p1, p2 ]
   test a b = a >= 0 && b >= 0 && a + b <= 1
   getUV a b = (1 - a - b) *^ uv0 + a *^ uv1 + b *^ uv2
-  in planeShape p0 s1 s2 test getUV bbox
+  in inline planeShape p0 s1 s2 test getUV bbox
 
 -- TODO: make sure that all functions that should be exported are exported
 
