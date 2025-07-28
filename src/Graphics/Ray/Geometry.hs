@@ -6,11 +6,11 @@ module Graphics.Ray.Geometry
   ( -- * Geometry
     Geometry(Geometry), pureGeometry, boundingBox
     -- * Surfaces and Volumes (TODO: move meshes into another section?)
-  , sphere, planeShape, parallelogram, cuboid, triangle, Mesh(Mesh), readObj, parseObj, triangleMesh, constantMedium
+  , sphere, planeShape, parallelogram, cuboid, triangle, Mesh(Mesh), transformVertices, readObj, parseObj, triangleMesh, constantMedium
     -- * Groups
   , group, bvhNode, Tree(Leaf, Node), bvhTree, autoTree
     -- * Transformations
-  , transform, translate, rotateX, rotateY, rotateZ, moving
+  , transform, translate, rotateX, rotateY, rotateZ, scale, moving
   ) where
 
 import Graphics.Ray.Core
@@ -166,12 +166,14 @@ triangle (p0, uv0) (p1, uv1) (p2, uv2) = let
 
 data Mesh = Mesh (A.Vector U Point3) (A.Vector U (V2 Double)) [V3 (Int, Maybe Int)]
 
+transformVertices :: M44 Double -> Mesh -> Mesh
+transformVertices m (Mesh vs vts fs) = 
+  let vs' = A.compute (A.map (dropLast . (m !*) . V4.point) vs) in
+  Mesh vs' vts fs
+
 readObj :: FilePath -> IO (Either String Mesh)
 readObj path = first ((path ++ ", ") ++) . parseObj <$> readFile path
 
--- [private] 
--- TODO: add vertex transformation parameter
--- TODO: export?
 parseObj :: String -> Either String Mesh
 parseObj file = do
   let (vLines, vtLines, fLines) = partitionLines (removeComments file)
@@ -405,6 +407,14 @@ rotateZ angle = V4
   where
     c = cos angle
     s = sin angle
+
+-- | (Only use with transformVertices ...)
+scale :: Double -> M44 Double
+scale a = V4
+  (V4 a 0 0 0)
+  (V4 0 a 0 0)
+  (V4 0 0 a 0)
+  (V4 0 0 0 1)
 
 -- [private]
 dropLast :: V4 a -> V3 a

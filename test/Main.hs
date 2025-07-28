@@ -317,14 +317,17 @@ pawnTest :: IO ()
 pawnTest = let
   world mesh = lambertian (checkerTexture 2 2 0.2 0.7) <$ bvhTree (autoTree (triangleMesh mesh))
   settings = defaultCameraSettings 
-    { cs_center = V3 0 0.025 0.05
+    { cs_center = V3 0 2.5 5
+    , cs_lookAt = V3 0 2.5 0
     , cs_imageWidth = 500
     , cs_samplesPerPixel = 200
     }
   in
   readObj "images/pawn.obj" >>= \case
     Left err -> putStrLn err
-    Right mesh -> writeImage "test_image.png" (raytrace settings (world mesh) (mkStdGen 55))
+    Right mesh -> 
+      let mesh' = transformVertices (scale 100) mesh in
+      writeImage "test_image.png" (raytrace settings (world mesh') (mkStdGen 55))
 
 -- This should take less than 110 seconds without redirection
 cornellTest :: IO ()
