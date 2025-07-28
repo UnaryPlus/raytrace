@@ -6,7 +6,7 @@ module Graphics.Ray.Geometry
   ( -- * Geometry
     Geometry(Geometry), pureGeometry, boundingBox
     -- * Surfaces and Volumes (TODO: move meshes into another section?)
-  , sphere, parallelogram, cuboid, triangle, Mesh(Mesh), readObj, triangleMesh, constantMedium
+  , sphere, planeShape, parallelogram, cuboid, triangle, Mesh(Mesh), readObj, triangleMesh, constantMedium
     -- * Groups
   , group, bvhNode, Tree(Leaf, Node), bvhTree, autoTree
     -- * Transformations
@@ -100,7 +100,6 @@ sphereUV (V3 x y z) = V2 u v
     u = atan2 x z / (2 * pi) + 0.5
     v = acos (-y) / pi 
 
--- TODO: export?
 planeShape :: Point3 -> Vec3 -> Vec3 -> (Double -> Double -> Bool) -> (Double -> Double -> V2 Double) -> Box -> Geometry Identity ()
 planeShape q u v test getUV bbox = let
   cp = cross u v
@@ -167,75 +166,91 @@ triangle (p0, uv0) (p1, uv1) (p2, uv2) = let
 
 data Mesh = Mesh (A.Vector U Point3) (A.Vector U (V2 Double)) [V3 (Int, Maybe Int)]
 
-readObj :: FilePath -> IO Mesh
+readObj :: FilePath -> IO (Either String Mesh)
 readObj path = parseObj <$> readFile path
 
 -- [private] 
--- TODO: return Either? (currently invokes undefined)
 -- TODO: add vertex transformation parameter
-parseObj :: String -> Mesh
-parseObj file = Mesh (A.fromList A.Seq vs) (A.fromList A.Seq vts) fs'
+-- TODO: export?
+parseObj :: String -> Either String Mesh
+parseObj file = do
+  let (vLines, vtLines, fLines) = partitionLines (removeComments file)
+  vs <- mapM parseV vLines
+  vts <- mapM parseVT vtLines
+  fs <- concat <$> mapM (parseF (length vs) (length vts)) fLines
+  Right (Mesh (A.fromList A.Seq vs) (A.fromList A.Seq vts) fs)
+  
   where
-  ls = map (takeWhile (/= '#')) (lines file)
+    removeComments :: String -> [String]
+    removeComments = map (takeWhile (/= '#')) . lines
 
-  vs :: [Point3]
-  vts :: [V2 Double]
-  fs :: [V3 (Int, Maybe Int)]
-  (vs, vts, fs) = foldr add ([], [], []) ls 
+    partitionLines :: [String] -> ([(Int, String)], [(Int, String)], [(Int, String)])
+    partitionLines = foldr addLine ([], [], []) . zip [1..]
 
-  numVs = length vs
-  numVTs = length vts
-  processIx len i 
-    | 1 <= i && i <= len = i - 1
-    | -len <= i && i <= -1 = i + len
-    | otherwise = undefined
+    addLine (k, line) (vs, vts, fs) =
+      case line of
+        'v':' ':rest -> ((k, rest) : vs, vts, fs)
+        'v':'t':' ':rest -> (vs, (k, rest) : vts, fs)
+        'f':' ':rest -> (vs, vts, (k, rest) : fs)
+        _ -> (vs, vts, fs)
 
-  fs' = map (fmap (bimap (processIx numVs) (fmap (processIx numVTs)))) fs
+    withLine :: Int -> String -> String
+    withLine k err = "line " ++ show k ++ ": " ++ err
+    
+    -- a 'v' statement must begin with three decimal numbers
+    parseV (k, line) = 
+      case words line of
+        (readMaybe -> Just x) : (readMaybe -> Just y) : (readMaybe -> Just z) : _ -> Right (V3 x y z)
+        _ -> Left (withLine k "invalid 'v' statement")
+    
+    -- a 'vt' statement must begin with two decimal numbers (or consist of a single decimal number, in which case v defaults to 0)
+    parseVT (k, line) =
+      case words line of
+        [readMaybe -> Just u] -> Right (V2 u 0)
+        (readMaybe -> Just u) : (readMaybe -> Just v) : _ -> Right (V2 u v)
+        _ -> Left (withLine k "invalid 'vt' statement")
 
-  add line acc@(vs, vts, fs) =
-    case line of
-      'v':' ':rest -> (parseV rest : vs, vts, fs)
-      'v':'t':' ':rest -> (vs, parseVT rest : vts, fs)
-      'f':' ':rest -> (vs, vts, parseF rest : fs)
-      _ -> acc
-  
-  parseV line = 
-    case words line of
-      (readMaybe -> Just x) : (readMaybe -> Just y) : (readMaybe -> Just z) : _ -> V3 x y z
-      _ -> undefined
-  
-  parseVT line =
-    case words line of
-      [readMaybe -> Just u] -> V2 u 0
-      (readMaybe -> Just u) : (readMaybe -> Just v) : _ -> V2 u v
-      _ -> undefined
+    parseF numVs numVTs (k, line) = 
+      case mapM (getIndices numVs numVTs) (words line) of
+          Left err -> Left (withLine k err)
+          Right (i:is) | length is >= 2 -> Right (map (uncurry (V3 i)) (pairs is))
+          Right _ -> Left (withLine k "invalid 'f' statement (fewer than 3 vertices)")
 
-  parseF line = 
-    case words line of
-      [getIndices -> Just i0, getIndices -> Just i1, getIndices -> Just i2] -> V3 i0 i1 i2
-      _ -> undefined
+    pairs :: [a] -> [(a, a)]
+    pairs = \case
+      [] -> []
+      [_] -> []
+      x:xs@(y:_) -> (x, y) : pairs xs
 
-  getIndices :: String -> Maybe (Int, Maybe Int)
-  getIndices str = do
-    (i, rest) <- extractInt str
-    case rest of
-      "" -> Just (i, Nothing)
-      '/':'/':_ -> Just (i, Nothing)
-      '/':str' -> do
-        (j, _) <- extractInt str'
-        Just (i, Just j)
-      _ -> Nothing
+    processIx len i 
+      | 1 <= i && i <= len = Right (i - 1)
+      | -len <= i && i <= -1 = Right (i + len)
+      | otherwise = Left ("index out of bounds: " ++ show i)
 
-  extractInt :: String -> Maybe (Int, String)
-  extractInt = \case
-    '-':str -> first negate <$> extractNat str
-    str -> extractNat str
-  
-  extractNat :: String -> Maybe (Int, String)
-  extractNat str = do
-    let (ds, rest) = span isDigit str
-    i <- readMaybe ds
-    Just (i, rest)
+    getIndices :: Int -> Int -> String -> Either String (Int, Maybe Int)
+    getIndices numVs numVTs str = do
+      (i, rest) <- extractInt str
+      i' <- processIx numVs i
+      case rest of
+        "" -> Right (i', Nothing)
+        '/':'/':_ -> Right (i', Nothing)
+        '/':str' -> do
+          (j, _) <- extractInt str'
+          j' <- processIx numVTs j
+          Right (i', Just j')
+        c:_ -> Left ("unexpected character '" ++ c : "'")
+
+    extractInt :: String -> Either String (Int, String)
+    extractInt = \case
+      '-':str -> first negate <$> extractNat str
+      str -> extractNat str
+    
+    extractNat :: String -> Either String (Int, String)
+    extractNat str = 
+      let (ds, rest) = span isDigit str in
+      case readMaybe ds of
+        Nothing -> Left "expected number"
+        Just i -> Right (i, rest)
 
 triangleMesh :: Mesh -> [Geometry Identity ()] 
 triangleMesh (Mesh verts uvs tris) = 

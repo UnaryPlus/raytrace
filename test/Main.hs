@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE LambdaCase #-}
 module Main where
 
 import Graphics.Ray
@@ -320,9 +321,10 @@ pawnTest = let
     , cs_imageWidth = 500
     , cs_samplesPerPixel = 200
     }
-  in do
-  mesh <- readObj "images/pawn.obj"
-  writeImage "test_image.png" (raytrace settings (world mesh) (mkStdGen 55))
+  in
+  readObj "images/pawn.obj" >>= \case
+    Left err -> putStrLn err
+    Right mesh -> writeImage "test_image.png" (raytrace settings (world mesh) (mkStdGen 55))
 
 -- This should take less than 110 seconds without redirection
 cornellTest :: IO ()
@@ -333,4 +335,4 @@ demoTest :: IO ()
 demoTest = demo2 "test_image.png" 400 250 4
 
 main :: IO ()
-main = demo2 "test_image.png" 400 1000 4
+main = pawnTest
