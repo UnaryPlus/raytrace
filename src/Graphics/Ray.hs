@@ -35,6 +35,7 @@ import qualified Graphics.Pixel.ColorSpace as C
 import Control.Monad.State (State, state, evalState)
 import Control.Monad (replicateM)
 import Data.Functor.Identity (Identity, runIdentity)
+import Data.Maybe (listToMaybe)
 
 data CameraSettings = CameraSettings
   { cs_center :: Point3 -- ^ Camera position 
@@ -49,8 +50,7 @@ data CameraSettings = CameraSettings
   , cs_defocusAngle :: Double -- ^ If this is positive, the image will be somewhat blurry in the foreground and background, 
                               -- with only a single plane in focus (like an image produced by a real camera)
   , cs_focusDist :: Double -- ^ Distance from the camera to the plane of focus (only matters if defocus angle is nonzero) 
-  , cs_redirectProb :: Double
-  , cs_redirectTarget :: (Point3, Vec3, Vec3) -- TODO: replace with list?
+  , cs_redirectTargets :: [(Double, Point3, Vec3, Vec3)] -- TODO: use some kind of 'blade' data type?
   }
 
 -- | By default, the camera is positioned at the origin looking in the negative z direction, with the positive y direction being upward
@@ -79,8 +79,7 @@ defaultCameraSettings = CameraSettings
   , cs_background = const (V3 1 1 1)
   , cs_defocusAngle = 0.0
   , cs_focusDist = 10.0
-  , cs_redirectProb = 0
-  , cs_redirectTarget = undefined
+  , cs_redirectTargets = []
   }
 
 class ToRandom m where
@@ -93,6 +92,15 @@ instance ToRandom Identity where
 instance ToRandom (State StdGen) where
   toRandom :: State StdGen a -> State StdGen a
   toRandom = id
+
+-- [private]
+data RedirectTarget = RedirectTarget
+  { rt_origin :: Point3
+  , rt_U :: Vec3
+  , rt_V :: Vec3
+  , rt_cross :: Vec3
+  , rt_hit :: Ray -> Maybe Double
+  }
 
 -- | Produce an image from the given camera settings, world, and seed.
 raytrace :: ToRandom m => CameraSettings -> Geometry m Material -> StdGen -> A.Matrix D Color
@@ -112,9 +120,20 @@ raytrace (CameraSettings {..}) (Geometry _ hitWorld) seed = let
   pixelU = across ^/ fromIntegral cs_imageWidth
   pixelV = down ^/ fromIntegral imageHeight
 
-  (lightOrigin, lightU, lightV) = cs_redirectTarget
-  Geometry _ hitLight = parallelogram lightOrigin lightU lightV
-  lightNormal = cross lightU lightV -- unit normal times area of parallelogram
+  redirectTargets = flip map cs_redirectTargets $ \(_, q, s0, s1) -> RedirectTarget
+    { rt_origin = q
+    , rt_U = s0
+    , rt_V = s1
+    , rt_cross = cross s0 s1
+    , rt_hit = 
+        let Geometry _ hit = parallelogram q s0 s1 in
+        \ray -> fmap (hr_t . fst) (runIdentity (hit undefined ray (0, infinity)))
+    }
+
+  probs = map (\(p, _, _, _) -> p) cs_redirectTargets
+  remProb = 1 - sum probs
+  thresholds = zip redirectTargets (scanl1 (+) probs)
+  getTarget r = fmap fst (listToMaybe (dropWhile ((r >=) . snd) thresholds))
 
   defocusRadius = cs_focusDist * tan (cs_defocusAngle / 2)
   defocusDiskU = u ^* defocusRadius
@@ -151,26 +170,20 @@ raytrace (CameraSettings {..}) (Geometry _ hitWorld) seed = let
             pure (emitted + attenuation * c)
       Just (hit, NewType mat) -> do
         let MaterialReturn {..} = mat ray hit
-        choose <- state random
-        (dir, dist2) <- if choose < cs_redirectProb
-          then do 
+        choice <- getTarget <$> state random
+        dir <- case choice of
+          Nothing -> mr_generate
+          Just RedirectTarget {..} -> do
             (i, j) <- state random
-            let lightPt = lightOrigin + i *^ lightU + j *^ lightV
-            let toLight = lightPt - hr_point hit
-            let dist2 = quadrance toLight
-            pure (toLight ^/ sqrt dist2, dist2)
-          else do
-            dir <- mr_generate
-            let dist2 = case runIdentity (hitLight undefined (Ray (hr_point hit) dir) (0, infinity)) of
-                  Nothing -> 0
-                  Just (HitRecord {hr_t = t}, _) -> t * t
-            pure (dir, dist2)
-        let pdf1 = mr_pdf dir
-        let pdf2 = dist2 / abs (dot lightNormal dir)
-        let pdf = if cs_redirectProb == 0 then pdf1 else pdf1 * (1 - cs_redirectProb) + pdf2 * cs_redirectProb -- TODO: better optimization?
+            let lightPt = rt_origin + i *^ rt_U + j *^ rt_V
+            pure (normalize (lightPt - hr_point hit))
+        let pdfs = flip map redirectTargets $ \RedirectTarget {..} ->
+              case rt_hit (Ray (hr_point hit) dir) of
+                Nothing -> 0
+                Just t -> t * t / abs (dot rt_cross dir)
+        let pdf = remProb * mr_pdf dir + sum (zipWith (*) probs pdfs)
         let mul = mr_multiplier dir ^/ pdf
-        c <- rayColor (depth - 1) time (Ray (hr_point hit) dir)
-        pure (mul * c)
+        (mul *) <$> rayColor (depth - 1) time (Ray (hr_point hit) dir)
   
   pixelColor :: Int -> Int -> State StdGen Color
   pixelColor i j = do

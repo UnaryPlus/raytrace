@@ -3,6 +3,7 @@
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE TupleSections #-}
 module Main where
 
 import Graphics.Ray
@@ -204,8 +205,7 @@ cornellBox samplesPerPixel maxRecurionDepth = let
     , cs_vfov = degrees 40
     , cs_center = V3 278 278 (-800)
     , cs_lookAt = V3 278 278 0
-    , cs_redirectProb = 0.25
-    , cs_redirectTarget = (,,) (V3 343 554 332) (V3 (-130) 0 0) (V3 0 0 (-105))
+    , cs_redirectTargets = [ (0.25, V3 343 554 332, V3 (-130) 0 0, V3 0 0 (-105)) ]
     }
 
   in writeImageSqrt "cornell_box.png" $ raytrace settings world (mkStdGen 234)
@@ -303,8 +303,7 @@ demo2 path imageWidth samplesPerPixel maxRecursionDepth = let
     , cs_samplesPerPixel = samplesPerPixel
     , cs_maxRecursionDepth = maxRecursionDepth
     , cs_background = const 0
-    , cs_redirectProb = 0.25
-    , cs_redirectTarget = light (,,) 
+    , cs_redirectTargets = [ light (0.25,,,) ]
     }
 
   in do
@@ -338,4 +337,4 @@ demoTest :: IO ()
 demoTest = demo2 "test_image.png" 400 250 4
 
 main :: IO ()
-main = pawnTest
+main = cornellTest
