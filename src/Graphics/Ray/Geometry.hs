@@ -4,13 +4,15 @@
 {-# LANGUAGE ViewPatterns #-}
 module Graphics.Ray.Geometry 
   ( -- * Geometry
-    Geometry(Geometry), pureGeometry, boundingBox
-    -- * Surfaces and Volumes (TODO: move meshes into another section?)
-  , sphere, planeShape, parallelogram, cuboid, triangle, Mesh(Mesh), transformVertices, readObj, parseObj, triangleMesh, constantMedium
+    Geometry(Geometry), boundingBox, pureGeometry, transform, moving
+    -- * Surfaces and Volumes
+  , sphere, planeShape, parallelogram, cuboid, triangle, triangleMesh, constantMedium
+    -- * Polygonal Meshes
+  , Mesh(Mesh), transformVertices, parseObj, readObj
     -- * Groups
-  , group, bvhNode, Tree(Leaf, Node), bvhTree, autoTree
+  , group, bvhNode, bvhTree
     -- * Transformations
-  , transform, translate, rotateX, rotateY, rotateZ, scale, moving
+  , translate, rotateX, rotateY, rotateZ, scale
   ) where
 
 import Graphics.Ray.Core
@@ -29,7 +31,7 @@ import Data.Functor.Identity (Identity(Identity), runIdentity)
 import Data.Functor ((<&>))
 import Text.Read (readMaybe)
 import Data.Char (isDigit)
-import GHC.Exts (inline)
+import GHC.Base (inline)
 
 -- | A @'Geometry' m a@ has a bounding box (used in the implementation of bounding volume hierarchies),
 -- as well as a function that takes a ray and an interval, and in the @m@ monad, produces either @Nothing@
@@ -101,7 +103,17 @@ sphereUV (V3 x y z) = V2 u v
     u = atan2 x z / (2 * pi) + 0.5
     v = acos (-y) / pi 
 
-planeShape :: Point3 -> Vec3 -> Vec3 -> (Double -> Double -> Bool) -> (Double -> Double -> V2 Double) -> Box -> Geometry Identity ()
+-- | Construct a subset of a plane. (See 'parallelogram' and 'triangle' for two instances of this.)
+-- Which side is the \"front side\" is determined by the right hand rule.
+{-# INLINABLE planeShape #-}
+planeShape 
+  :: Point3 -- ^ (0, 0) point on the plane
+  -> Vec3 -- ^ First basis vector
+  -> Vec3 -- ^ Second basis vector
+  -> (Double -> Double -> Bool) -- ^ Whether a point on the plane is in the shape
+  -> (Double -> Double -> V2 Double) -- ^ Texture coordinates
+  -> Box -- ^ Bounding box (this is padded by a small amount to ensure all dimensions are positive)
+  -> Geometry Identity ()
 planeShape q u v test getUV bbox = let
   cp = cross u v
   norm_cp = norm cp
@@ -132,7 +144,6 @@ planeShape q u v test getUV bbox = let
   in Geometry (padBox 0.0001 bbox) hitShape
 
 -- | Construct a parallelogram from a corner point and two edge vectors.
--- Which side is the \"front side\" is determined by the right hand rule.
 parallelogram :: Point3 -> Vec3 -> Vec3 -> Geometry Identity ()
 parallelogram q u v = let
   bbox = boxHull [ q, q + u, q + v, q + u + v ] 
@@ -154,6 +165,7 @@ cuboid (V3 (xmin, xmax) (ymin, ymax) (zmin, zmax)) = let
     , parallelogram (V3 xmin ymin zmin) dx dz -- bottom
     ]
 
+-- | Construct a triangle from three corner points and their texture coordinates.
 triangle :: (Point3, V2 Double) -> (Point3, V2 Double) -> (Point3, V2 Double) -> Geometry Identity ()
 triangle (p0, uv0) (p1, uv1) (p2, uv2) = let
   s1 = p1 - p0
@@ -165,16 +177,33 @@ triangle (p0, uv0) (p1, uv1) (p2, uv2) = let
 
 -- TODO: make sure that all functions that should be exported are exported
 
-data Mesh = Mesh (A.Vector U Point3) (A.Vector U (V2 Double)) [V3 (Int, Maybe Int)]
+-- | A collection of triangles.
+data Mesh = Mesh 
+  (A.Vector U Point3) -- ^ Array of vertex locations.
+  (A.Vector U (V2 Double)) -- ^ Array of texture coordinates.
+  [V3 (Int, Maybe Int)] -- ^ List of triangles. Each triangle has three vertices, whose locations and (optional) texture coordinates
+                        -- are defined by indexing into the two arrays.
 
+-- | Apply an affine transformation (represented as a 4 by 4 matrix whose bottom row is 0 0 0 1) to the vertices of a mesh.
 transformVertices :: M44 Double -> Mesh -> Mesh
 transformVertices m (Mesh vs vts fs) = 
   let vs' = A.compute (A.map (dropLast . (m !*) . V4.point) vs) in
   Mesh vs' vts fs
 
+-- | Parse the .obj file at the given location.
 readObj :: FilePath -> IO (Either String Mesh)
 readObj path = first ((path ++ ", ") ++) . parseObj <$> readFile path
 
+-- | Parse a Wavefront .obj file.
+--
+-- * Comments beginning with @#@ are ignored, as are all lines that do not
+--   begin with @v @, @vt @, or @f @. 
+-- * Faces with more than three vertices are allowed, but are triangulated before
+--   adding them to the 'Mesh' object.
+-- * Indices can be either positive or negative. For example, if there are 20
+--   @v@ statements in the file, the vertex indices of a face must be in the
+--   range [1, 20] or [-20, -1], with -1 meaning the last vertex. In either case,
+--   they are converted into 0-based indices.
 parseObj :: String -> Either String Mesh
 parseObj file = do
   let (vLines, vtLines, fLines) = partitionLines (removeComments file)
@@ -255,10 +284,10 @@ parseObj file = do
         Nothing -> Left "expected number"
         Just i -> Right (i, rest)
 
-triangleMesh :: Mesh -> [Geometry Identity ()] 
+-- | Realize a 'Mesh' as a 'Geometry' (implemented as a 'bvhTree' of triangles).
+triangleMesh :: Mesh -> Geometry Identity ()
 triangleMesh (Mesh verts uvs tris) = 
-  -- TODO: use bvhTree?
-  flip map tris $ \(V3 (i0, j0) (i1, j1) (i2, j2)) -> let
+  bvhTree $ flip map tris $ \(V3 (i0, j0) (i1, j1) (i2, j2)) -> let
     uv0 = maybe (V2 0 0) (uvs !) j0
     uv1 = maybe (V2 1 0) (uvs !) j1
     uv2 = maybe (V2 0 1) (uvs !) j2
@@ -332,31 +361,23 @@ bvhNode (Geometry bboxLeft hitLeft) (Geometry bboxRight hitRight) = let
   
   in Geometry bbox hitBvhNode
 
-data Tree a = Leaf a | Node (Tree a) (Tree a)
-
 -- | Group multiple geometric objects (organized as a tree) into a single object. A bounding box is created for every subtree of the 
 -- given tree; if a ray does not intersect the bounding box, it cannot hit any of the child objects, so none of
 -- them need to be tested further.
-{-# SPECIALISE bvhTree :: Tree (Geometry Identity a) -> Geometry Identity a #-}
-bvhTree :: Monad m => Tree (Geometry m a) -> Geometry m a
+{-# SPECIALISE bvhTree :: [Geometry Identity a] -> Geometry Identity a #-}
+bvhTree :: Monad m => [Geometry m a] -> Geometry m a
 bvhTree = \case
-  Leaf a -> a
-  Node left right -> bvhNode (bvhTree left) (bvhTree right)
-
--- | Organize the geometric objects into a tree based on their positions.
-autoTree :: [Geometry m a] -> Tree (Geometry m a)
-autoTree = \case
-  [] -> error "autoTree: empty list"
-  [obj] -> Leaf obj
+  [] -> error "bvhTree: empty list"
+  [obj] -> obj
   obs -> let
     d = longestDim (boxJoin (map boundingBox obs))
     obs' = sortOn (midpoint . component d . boundingBox) obs
     (left, right) = splitAt (length obs `div` 2) obs'
-    in Node (autoTree left) (autoTree right)
+    in bvhNode (bvhTree left) (bvhTree right)
 
 -- | Apply an affine transformation (represented as a 4 by 4 matrix whose bottom row is 0 0 0 1) to a geometric object.
--- TODO: NOT ALL AFFINE TRANSFORMATIONS ARE VALID (MUST BE EUCLIDEAN FOR NORMAL TO STAY NORMAL?)
--- TODO: would this benefit from specialization?
+-- The transformation should be Euclidean (translation, rotation, reflection, or a composition thereof); otherwise, the
+-- normal vectors of the resulting geometry will be incorrect.
 transform :: Functor m => M44 Double -> Geometry m a -> Geometry m a
 transform m (Geometry bbox hitObj) = let
   m34 = dropLast m
@@ -409,7 +430,7 @@ rotateZ angle = V4
     c = cos angle
     s = sin angle
 
--- | (Only use with transformVertices ...)
+-- | Scaling centered at the origin. This should not be used with 'transform'.
 scale :: Double -> M44 Double
 scale a = V4
   (V4 a 0 0 0)
@@ -421,6 +442,8 @@ scale a = V4
 dropLast :: V4 a -> V3 a
 dropLast (V4 x y z _) = V3 x y z
 
+-- | Create a motion-blurred object that is translated by the first vector at time 0
+-- and by the second vector at time 1.
 moving :: Functor m => Vec3 -> Vec3 -> Geometry m a -> Geometry m a
 moving v0 v1 (Geometry bbox hitObj) =
   let bbox' = boxJoin [shiftBox v0 bbox, shiftBox v1 bbox] in

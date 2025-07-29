@@ -142,7 +142,7 @@ demo1 = let
 
   genWorld :: State StdGen (Geometry Identity Material)
   genWorld = do
-    fmap (bvhTree . autoTree . (bigSpheres ++) . concat) $ forM (liftA2 (,) [-11..10] [-11..10]) $ \(a, b) -> do
+    fmap (bvhTree . (bigSpheres ++) . concat) $ forM (liftA2 (,) [-11..10] [-11..10]) $ \(a, b) -> do
       offsetX <- state (randomR (0, 0.9))
       offsetZ <- state (randomR (0, 0.9))
       let center = V3 (a + offsetX) 0.2 (b + offsetZ)
@@ -255,7 +255,7 @@ demo2 path imageWidth samplesPerPixel maxRecursionDepth = let
 
   generateBoxes :: State StdGen (Geometry Identity Material)
   generateBoxes = 
-    fmap ((ground <$) . bvhTree . autoTree) $ 
+    fmap ((ground <$) . bvhTree) $ 
     forM (liftA2 (,) [0..19] [0..19]) $ \(i, j) -> do
       let x0 = -1000 + i * 100
       let z0 = -1000 + j * 100
@@ -267,7 +267,7 @@ demo2 path imageWidth samplesPerPixel maxRecursionDepth = let
   
   generateBalls :: State StdGen (Geometry Identity Material)
   generateBalls =
-    fmap ((white <$) . transform (translate (V3 (-100) 270 395) !*! rotateY (degrees 15)) . bvhTree . autoTree) $
+    fmap ((white <$) . transform (translate (V3 (-100) 270 395) !*! rotateY (degrees 15)) . bvhTree) $
     replicateM 1000 $ do
       p <- state (randomR (0, 165)) 
       pure (sphere p 10)
@@ -314,7 +314,7 @@ demo2 path imageWidth samplesPerPixel maxRecursionDepth = let
 
 pawnTest :: IO ()
 pawnTest = let
-  world mesh = lambertian (checkerTexture 2 2 0.2 0.7) <$ bvhTree (autoTree (triangleMesh mesh))
+  world mesh = lambertian (checkerTexture 2 2 0.2 0.7) <$ triangleMesh mesh
   settings = defaultCameraSettings 
     { cs_center = V3 0 2.5 5
     , cs_lookAt = V3 0 2.5 0

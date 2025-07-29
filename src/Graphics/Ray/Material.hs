@@ -19,7 +19,7 @@ data Material
   | NewType (Ray -> HitRecord -> MaterialReturn) -- TODO: rename
 
 data MaterialReturn = MaterialReturn -- TODO: rename
-  { mr_multiplier :: Vec3 -> Color -- 'attenuation' (prior to dividing by combined pdf) (TODO: change definition?)
+  { mr_multiplier :: Vec3 -> Color -- 'attenuation' (prior to dividing by combined pdf)
   , mr_generate :: State StdGen Vec3 -- distribution for non-redirected rays (SHOULD BE NORMALIZED)
   , mr_pdf :: Vec3 -> Double -- pdf for mr_generate
   }

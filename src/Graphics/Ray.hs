@@ -25,7 +25,7 @@ import Graphics.Ray.Material
 import Graphics.Ray.Texture
 import Graphics.Ray.Noise
 
-import Linear (V2(V2), V3(V3), (*^), (^*), normalize, cross, (^/), zero, quadrance, dot)
+import Linear (V2(V2), V3(V3), (*^), (^*), normalize, cross, (^/), zero, dot)
 import System.Random (StdGen, random, splitGen)
 import Data.Massiv.Array (B, D, S, U, Ix2((:.)), (!))
 import qualified Data.Massiv.Array as A
@@ -65,6 +65,7 @@ data CameraSettings = CameraSettings
 -- cs_background = const (V3 1 1 1)
 -- cs_defocusAngle = 0.0
 -- cs_focusDist = 10.0
+-- cs_redirectTargets = []
 -- @
 defaultCameraSettings :: CameraSettings
 defaultCameraSettings = CameraSettings

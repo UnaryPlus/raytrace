@@ -137,6 +137,7 @@ allCorners (V3 i1 i2 i3) =
 padBox :: Double -> Box -> Box
 padBox padding = fmap (padInterval padding)
 
+-- | Translate the box by the given vector.
 shiftBox :: Vec3 -> Box -> Box
 shiftBox = liftA2 (\x (a, b) -> (a + x, b + x))
 
