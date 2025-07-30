@@ -244,6 +244,7 @@ cornellSmoke = let
     , cs_vfov = degrees 40
     , cs_center = V3 278 278 (-800)
     , cs_lookAt = V3 278 278 0
+    , cs_redirectTargets = [ (0.25, V3 113 554 127, V3 330 0 0, V3 0 0 305) ]
     }
 
   in writeImageSqrt "cornell_smoke.png" . raytrace settings world =<< newStdGen
@@ -327,6 +328,22 @@ pawnTest = let
     Right mesh -> 
       let mesh' = transformVertices (scale 100) mesh in
       writeImage "test_image.png" (raytrace settings (world mesh') (mkStdGen 55))
+
+lommelSeeligerTest :: IO ()
+lommelSeeligerTest = let
+  world = group
+    [ lommelSeeliger (constantTexture 1) <$ sphere (V3 0 0 (-2)) 1
+    , lightSource (constantTexture 160) <$ sphere (V3 0 0 22) 1
+    ]
+
+  settings = defaultCameraSettings
+    { cs_imageWidth = 500
+    , cs_samplesPerPixel = 500
+    , cs_background = const 0
+    , cs_redirectTargets = [ (0.5, V3 (-1) (-1) 21, V3 2 0 0, V3 0 2 0) ]
+    }
+
+  in writeImage "test_image.png" (raytrace settings world (mkStdGen 55))
 
 -- This should take less than 110 seconds without redirection
 cornellTest :: IO ()

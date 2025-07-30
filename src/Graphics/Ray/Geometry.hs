@@ -297,21 +297,23 @@ triangleMesh (Mesh verts uvs tris) =
 -- Typical materials are 'Graphics.Material.isotropic' and 'Graphics.Material.pitchBlack'.
 constantMedium
   :: Double -- ^ Density 
-  -> Geometry Identity () -- ^ Surface (assumed to be convex in current implementation)
+  -> Geometry Identity () -- ^ Surface
   -> Geometry (State StdGen) ()
 constantMedium density (Geometry bbox hitObj) = let
   negInvDensity = -(1 / density)
 
   hitMedium :: Double -> Ray -> Interval -> State StdGen (Maybe (HitRecord, ()))
   hitMedium time ray@(Ray orig dir) (tmin, tmax) = 
-    case do (hit1, ()) <- runIdentity (hitObj time ray (-infinity, infinity))
-            (hit2, ()) <- runIdentity (hitObj time ray (hr_t hit1, infinity))
-            let t1 = max tmin (hr_t hit1)
-            let t2 = min tmax (hr_t hit2)
-            guard (t1 < t2)
-            Just (t1, t2, hit1) of
+    case do (hit1, ()) <- runIdentity (hitObj time ray (tmin, infinity)) 
+            if hr_frontSide hit1 
+              then do
+                guard (hr_t hit1 < tmax)
+                (hit2, ()) <- runIdentity (hitObj time ray (hr_t hit1, infinity)) -- TODO: it is crucial here that Intervals are interpreted as open intervals
+                Just (hr_t hit1, min tmax (hr_t hit2))
+              else Just (tmin, min tmax (hr_t hit1))
+    of
       Nothing -> pure Nothing -- ray is never in fog within interval
-      Just (t1, t2, hit1) -> state random <&> \rand ->
+      Just (t1, t2) -> state random <&> \rand ->
          do let rayScale = norm dir
             let inDist = (t2 - t1) * rayScale
             let hitDist = negInvDensity * log rand
@@ -320,9 +322,9 @@ constantMedium density (Geometry bbox hitObj) = let
             let hit = HitRecord
                   { hr_t = t
                   , hr_point = orig + t *^ dir
-                  , hr_normal = hr_normal hit1
-                  , hr_frontSide = hr_frontSide hit1
-                  , hr_uv = hr_uv hit1
+                  , hr_normal = V3 0 0 1 -- arbitrary
+                  , hr_frontSide = True -- arbitrary
+                  , hr_uv = V2 0 0 -- arbitrary
                   }
             Just (hit, ())
 
