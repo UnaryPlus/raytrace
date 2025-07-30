@@ -15,11 +15,11 @@ import Control.Monad.State (State, state)
 -- | A material is a function that, given the details of a ray-surface intersection, produces an emitted color
 -- (which is @0@ for all of the materials in this module save 'lightSource') and potentially a reflected ray
 -- along with a color to scale the result of tracing said ray by.
-newtype Material = Material (Ray -> HitRecord -> (Color, State StdGen MaterialResult)) -- TODO: replace Ray with Vec3?
+newtype Material = Material (Vec3 -> HitRecord -> (Color, State StdGen MaterialResult))
 
 data MaterialResult
   = Absorb
-  | Scatter Color Ray -- TODO: replace Ray with Vec3?
+  | Scatter Color Vec3 -- TODO: replace Ray with Vec3?
   | HemisphereF (Vec3 -> Color) -- BRDF * pi (argument is normalized and has positive dot product with hr_normal)
   | SphereF (Vec3 -> Color) -- Albedo * phase function * 4 pi (argument is normalized)
 
@@ -45,18 +45,18 @@ lambertian (Texture tex) = Material $
 -- | A colored mirror. (For no color, use @'constantTexture' 1@.)
 mirror :: Texture -> Material
 mirror (Texture tex) = Material $
-  \(Ray _ dir) (HitRecord {..}) -> 
-    (zero, pure $ Scatter (tex hr_point hr_uv) (Ray hr_point (reflect hr_normal dir)))
+  \dir (HitRecord {..}) -> 
+    (zero, pure $ Scatter (tex hr_point hr_uv) (reflect hr_normal dir))
 
 -- | A metallic-looking material that reflects rays inexactly. The larger the first argument is, the less shiny
 -- the material. @'metal' 0@ behaves the same as 'mirror'.
 metal :: Double -> Texture -> Material
 metal fuzz (Texture tex) = Material $
-  \(Ray _ dir) (HitRecord {..}) -> (zero,) $ do
+  \dir (HitRecord {..}) -> (zero,) $ do
     u <- randomUnitVector
     let dir' = normalize (reflect hr_normal dir) + (fuzz *^ u)
     let scatter = dot dir' hr_normal > 0
-    pure (if scatter then Scatter (tex hr_point hr_uv) (Ray hr_point dir') else Absorb)
+    pure (if scatter then Scatter (tex hr_point hr_uv) dir' else Absorb)
 
 -- [private]
 refract :: Double -> Double -> Vec3 -> Vec3 -> Vec3 
@@ -69,7 +69,7 @@ refract iorRatio cosTheta normal u = let
 -- The argument is the index of refraction relative to the surrounding medium.
 dielectric :: Double -> Material
 dielectric ior = Material $
-  \(Ray _ dir) (HitRecord {..}) -> (zero,) $ do
+  \dir (HitRecord {..}) -> (zero,) $ do
     let iorRatio = if hr_frontSide then 1/ior else ior
     let u = normalize dir
     let cosTheta = min 1 (dot hr_normal (-u))
@@ -85,13 +85,13 @@ dielectric ior = Material $
           then reflect hr_normal u
           else refract iorRatio cosTheta hr_normal u
     
-    pure (Scatter (V3 1 1 1) (Ray hr_point dir'))    
+    pure (Scatter (V3 1 1 1) dir')
 
 -- | A material that lets all light through, with the given tint.
 transparent :: Texture -> Material
 transparent (Texture tex) = Material $
-  \(Ray _ dir) (HitRecord {..}) ->
-    (zero, pure $ Scatter (tex hr_point hr_uv) (Ray hr_point dir))
+  \dir (HitRecord {..}) ->
+    (zero, pure $ Scatter (tex hr_point hr_uv) dir)
 
 -- | A material that scatters an incoming ray in a direction chosen uniformly at random from the unit sphere. 
 -- (Typically used with 'Graphics.Geometry.constantMedium'.)
@@ -105,7 +105,7 @@ isotropic (Texture tex) = Material $
 -- (Typically used with 'Graphics.Geometry.constantMedium'.)
 anisotropic :: Double -> Texture -> Material
 anisotropic g (Texture tex) = Material $
-  \(Ray _ inDir) (HitRecord {..}) -> (zero,) $ pure $ SphereF $ \outDir -> let
+  \inDir (HitRecord {..}) -> (zero,) $ pure $ SphereF $ \outDir -> let
     mu = dot inDir outDir / norm inDir
     hg = (1 - g*g) / (1 + g*g - 2*g*mu)**1.5 
     in hg *^ tex hr_point hr_uv

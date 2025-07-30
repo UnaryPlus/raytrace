@@ -158,17 +158,17 @@ raytrace (CameraSettings {..}) (Geometry _ hitWorld) seed = let
     pure (Ray origin (target - origin))
 
   rayColor :: Int -> Double -> Ray -> State StdGen Color
-  rayColor depth time ray
+  rayColor depth time ray@(Ray _ rayDir)
     | depth <= 0 = pure zero
     | otherwise =
     toRandom (hitWorld time ray (0.0001, infinity)) >>= \case
       Nothing -> pure (cs_background ray)
       Just (hit, Material mat) -> do
-        let (emitted, genRes) = mat ray hit
+        let (emitted, genRes) = mat rayDir hit
         res <- genRes
         (emitted +) <$> case res of
           Absorb -> pure zero
-          Scatter attenuation ray' -> (attenuation *) <$> rayColor (depth - 1) time ray'
+          Scatter attenuation dir -> (attenuation *) <$> rayColor (depth - 1) time (Ray (hr_point hit) dir)
 
           HemisphereF matF -> do
             choice <- getTarget <$> state random
