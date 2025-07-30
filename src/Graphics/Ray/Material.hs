@@ -2,26 +2,30 @@
 {-# LANGUAGE TupleSections #-}
 module Graphics.Ray.Material 
   ( Material(..), MaterialResult(..)
-  , lightSource, pitchBlack, lambertian, mirror, metal, dielectric, transparent, isotropic
+  , lightSource, pitchBlack, lambertian, mirror, metal, dielectric, transparent, isotropic, anisotropic
   ) where
 
 import Graphics.Ray.Core
 import Graphics.Ray.Texture
 
-import Linear (V3(V3), zero, normalize, dot, quadrance, (*^))
+import Linear (V3(V3), zero, normalize, dot, quadrance, (*^), norm)
 import System.Random (StdGen, random)
 import Control.Monad.State (State, state)
 
 -- | A material is a function that, given the details of a ray-surface intersection, produces an emitted color
 -- (which is @0@ for all of the materials in this module save 'lightSource') and potentially a reflected ray
 -- along with a color to scale the result of tracing said ray by.
-newtype Material = Material (Ray -> HitRecord -> (Color, State StdGen MaterialResult)) -- TODO: replace Ray with Vec3
+newtype Material = Material (Ray -> HitRecord -> (Color, State StdGen MaterialResult)) -- TODO: replace Ray with Vec3?
 
 data MaterialResult
   = Absorb
-  | Scatter Color Ray -- TODO: replace Ray with Vec3
+  | Scatter Color Ray -- TODO: replace Ray with Vec3?
   | HemisphereF (Vec3 -> Color) -- BRDF * pi (argument is normalized and has positive dot product with hr_normal)
   | SphereF (Vec3 -> Color) -- Albedo * phase function * 4 pi (argument is normalized)
+
+-- NOTE: I could generalize 'HemisphereF' and 'SphereF' by allowing the material to specify a unit vector generator (and pdf)
+-- to use in the case of no redirection. 'anisotropic', for example, could benefit from this. One issue is that it would require
+-- converting a single vector into an orthonormal basis.
 
 -- | A material that emits light and does not reflect rays.
 lightSource :: Texture -> Material
@@ -65,7 +69,7 @@ refract iorRatio cosTheta normal u = let
 -- The argument is the index of refraction relative to the surrounding medium.
 dielectric :: Double -> Material
 dielectric ior = Material $
-  \(Ray _ dir) (HitRecord {..}) -> (zero, ) $ do
+  \(Ray _ dir) (HitRecord {..}) -> (zero,) $ do
     let iorRatio = if hr_frontSide then 1/ior else ior
     let u = normalize dir
     let cosTheta = min 1 (dot hr_normal (-u))
@@ -95,3 +99,13 @@ isotropic :: Texture -> Material
 isotropic (Texture tex) = Material $
   \_ (HitRecord {..}) -> (zero, pure $ SphereF $ const (tex hr_point hr_uv))
 
+-- | A material that scatters an incoming ray according to the Henyey-Greenstein distribution. The first parameter
+-- should be in the range (-1, 1); negative values result in more backward scattering and positive values result in
+-- more forward scattering.
+-- (Typically used with 'Graphics.Geometry.constantMedium'.)
+anisotropic :: Double -> Texture -> Material
+anisotropic g (Texture tex) = Material $
+  \(Ray _ inDir) (HitRecord {..}) -> (zero,) $ pure $ SphereF $ \outDir -> let
+    mu = dot inDir outDir / norm inDir
+    hg = (1 - g*g) / (1 + g*g - 2*g*mu)**1.5 
+    in hg *^ tex hr_point hr_uv
