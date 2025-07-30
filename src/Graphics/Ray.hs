@@ -163,28 +163,51 @@ raytrace (CameraSettings {..}) (Geometry _ hitWorld) seed = let
     | otherwise =
     toRandom (hitWorld time ray (0.0001, infinity)) >>= \case
       Nothing -> pure (cs_background ray)
-      Just (hit, OldType mat) -> 
-        mat ray hit >>= \case
-          (emitted, Nothing) -> pure emitted
-          (emitted, Just (attenuation, ray')) -> do
-            c <- rayColor (depth - 1) time ray'
-            pure (emitted + attenuation * c)
-      Just (hit, NewType mat) -> do
-        let MaterialReturn {..} = mat ray hit
-        choice <- getTarget <$> state random
-        dir <- case choice of
-          Nothing -> mr_generate
-          Just RedirectTarget {..} -> do
-            (i, j) <- state random
-            let lightPt = rt_origin + i *^ rt_U + j *^ rt_V
-            pure (normalize (lightPt - hr_point hit))
-        let pdfs = flip map redirectTargets $ \RedirectTarget {..} ->
-              case rt_hit (Ray (hr_point hit) dir) of
-                Nothing -> 0
-                Just t -> t * t / abs (dot rt_cross dir)
-        let pdf = remProb * mr_pdf dir + sum (zipWith (*) probs pdfs)
-        let mul = mr_multiplier dir ^/ pdf
-        (mul *) <$> rayColor (depth - 1) time (Ray (hr_point hit) dir)
+      Just (hit, Material mat) -> do
+        let (emitted, genRes) = mat ray hit
+        res <- genRes
+        (emitted +) <$> case res of
+          Absorb -> pure zero
+          Scatter attenuation ray' -> (attenuation *) <$> rayColor (depth - 1) time ray'
+
+          HemisphereF matF -> do
+            choice <- getTarget <$> state random
+            dir <- case choice of
+              Nothing -> do
+                uu <- randomUnitVector
+                pure (normalize (hr_normal hit + uu))
+              Just RedirectTarget {..} -> do
+                (i, j) <- state random
+                let lightPt = rt_origin + i *^ rt_U + j *^ rt_V
+                pure (normalize (lightPt - hr_point hit))
+            let pdf1 = dot dir (hr_normal hit) / pi
+            if pdf1 <= 0 then pure zero else do
+              let pdfs = flip map redirectTargets $ \RedirectTarget {..} ->
+                    case rt_hit (Ray (hr_point hit) dir) of
+                      Nothing -> 0
+                      Just t -> t * t / abs (dot rt_cross dir)
+              -- The pdf from which 'dir' was generated
+              let pdf = remProb * pdf1 + sum (zipWith (*) probs pdfs)
+              c <- rayColor (depth - 1) time (Ray (hr_point hit) dir)
+              pure (matF dir * c ^* (pdf1 / pdf))
+
+          SphereF matF -> do
+            choice <- getTarget <$> state random
+            dir <- case choice of
+              Nothing -> randomUnitVector
+              Just RedirectTarget {..} -> do
+                (i, j) <- state random
+                let lightPt = rt_origin + i *^ rt_U + j *^ rt_V
+                pure (normalize (lightPt - hr_point hit))
+            let pdf1 = 0.25 / pi
+            let pdfs = flip map redirectTargets $ \RedirectTarget {..} ->
+                  case rt_hit (Ray (hr_point hit) dir) of
+                    Nothing -> 0
+                    Just t -> t * t / abs (dot rt_cross dir)
+            -- The pdf from which 'dir' was generated
+            let pdf = remProb * pdf1 + sum (zipWith (*) probs pdfs) 
+            c <- rayColor (depth - 1) time (Ray (hr_point hit) dir)
+            pure (matF dir * c ^* (pdf1 / pdf))
   
   pixelColor :: Int -> Int -> State StdGen Color
   pixelColor i j = do
