@@ -35,7 +35,7 @@ module Main where
 
 import Graphics.Ray
 import Linear (V3(V3))
-import System.Random (newStdGen)
+import System.Random (mkStdGen)
 import Data.Functor.Identity (Identity)
 
 world :: Geometry Identity Material
@@ -55,8 +55,8 @@ settings = defaultCameraSettings
   }
 
 main :: IO ()
-main = do
-  seed <- newStdGen
+main = 
+  let seed = mkStdGen 100 in
   writeImage "example_image.png" (raytrace settings world seed)
 ```
 
