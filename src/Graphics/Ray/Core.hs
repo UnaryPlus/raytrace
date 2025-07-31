@@ -46,7 +46,6 @@ argMax (V3 x y z)
   | otherwise = if y > z then Y else Z
 
 -- | If @n@ is the normal vector of a mirror, and @v@ is an incoming light ray, then @reflect n v@ is the outgoing light ray.
--- The first argument should be a unit vector, but the second need not be.
 reflect :: Vec3 -> Vec3 -> Vec3
 reflect normal v = 
   v - 2 * dot normal v *^ normal

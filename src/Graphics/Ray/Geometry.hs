@@ -362,9 +362,9 @@ bvhNode (Geometry bboxLeft hitLeft) (Geometry bboxRight hitRight) = let
   
   in Geometry bbox hitBvhNode
 
--- | Group multiple geometric objects (organized as a tree) into a single object. A bounding box is created for every subtree of the 
--- given tree; if a ray does not intersect the bounding box, it cannot hit any of the child objects, so none of
--- them need to be tested further.
+-- | Group multiple geometric objects into a single object. 
+-- The objects are organized into a tree based on their positions, and then a 'bvhNode'
+-- is created for each node in the tree.
 {-# SPECIALISE bvhTree :: [Geometry Identity a] -> Geometry Identity a #-}
 bvhTree :: Monad m => [Geometry m a] -> Geometry m a
 bvhTree = \case
