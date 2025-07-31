@@ -62,7 +62,7 @@ data CameraSettings = CameraSettings
   , cs_focusDist :: Double 
     -- ^ Distance from the camera to the plane of focus (only matters if defocus angle is nonzero) 
   , cs_redirectTargets :: [(Double, Point3, Vec3, Vec3)] 
-    -- ^ List of parallelograms to send secondary rays toward (if the material allows it) along with 
+    -- ^ List of parallelograms to send scattered rays toward (if the material allows it) along with 
     -- probabilities, which should add up to less than 1. Sending more rays toward lights in 
     -- scenes with small light sources can lead to faster convergence (i.e. less noise).
   }
