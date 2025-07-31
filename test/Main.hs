@@ -377,13 +377,15 @@ bunnyTest = let
     let mesh' = transformVertices (rotateY (degrees 30) !*! scale 12 !*! translate (-center)) mesh
     writeImage "test_image.png" (raytrace settings (world mesh') (mkStdGen 55))
 
--- This should take less than 110 seconds without redirection
+-- Version 0.1.0.0: ~1:45 (without redirection)
+-- Version 0.2.0.0: ~1:00 with redirection, ~2:00 without
 cornellTest :: IO ()
 cornellTest = cornellBox 200 50
 
--- This should take less than 70 seconds without redirection
+-- Version 0.1.0.0: ~1:05 (without redirection)
+-- Version 0.2.0.0: ~1:05 with redirection, ~1:10 without
 demoTest :: IO ()
 demoTest = demo2 "test_image.png" 400 250 4
 
 main :: IO ()
-main = pawnTest
+main = demoTest
