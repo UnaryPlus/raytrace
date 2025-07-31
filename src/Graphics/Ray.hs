@@ -38,19 +38,33 @@ import Data.Functor.Identity (Identity, runIdentity)
 import Data.Maybe (listToMaybe)
 
 data CameraSettings = CameraSettings
-  { cs_center :: Point3 -- ^ Camera position 
-  , cs_lookAt :: Point3 -- ^ Point for the camera to look at 
-  , cs_up :: Vec3 -- ^ Camera \"up\" vector 
-  , cs_vfov :: Double -- ^ Vertical field of view (in radians) 
-  , cs_aspectRatio :: Double -- ^ Width-to-height ratio of image 
-  , cs_imageWidth :: Int -- ^ Image width in pixels 
-  , cs_samplesPerPixel :: Int -- ^ Number of top-level rays created per pixel 
-  , cs_maxRecursionDepth :: Int -- ^ Number of times a ray can reflect before recursion stops 
-  , cs_background :: Ray -> Color -- ^ Background color (which can depend on direction) 
-  , cs_defocusAngle :: Double -- ^ If this is positive, the image will be somewhat blurry in the foreground and background, 
-                              -- with only a single plane in focus (like an image produced by a real camera)
-  , cs_focusDist :: Double -- ^ Distance from the camera to the plane of focus (only matters if defocus angle is nonzero) 
-  , cs_redirectTargets :: [(Double, Point3, Vec3, Vec3)] -- TODO: use some kind of 'blade' data type?
+  { cs_center :: Point3 
+    -- ^ Camera position 
+  , cs_lookAt :: Point3 
+    -- ^ Point for the camera to look at 
+  , cs_up :: Vec3 
+    -- ^ Camera \"up\" vector 
+  , cs_vfov :: Double 
+    -- ^ Vertical field of view (in radians) 
+  , cs_aspectRatio :: Double 
+    -- ^ Width-to-height ratio of image 
+  , cs_imageWidth :: Int 
+    -- ^ Image width in pixels 
+  , cs_samplesPerPixel :: Int 
+    -- ^ Number of top-level rays created per pixel 
+  , cs_maxRecursionDepth :: Int 
+    -- ^ Number of times a ray can reflect before recursion stops 
+  , cs_background :: Ray -> Color 
+    -- ^ Background color (which can depend on direction) 
+  , cs_defocusAngle :: Double 
+    -- ^ If this is positive, the image will be somewhat blurry in the foreground and background, 
+    -- with only a single plane in focus (like an image produced by a real camera)
+  , cs_focusDist :: Double 
+    -- ^ Distance from the camera to the plane of focus (only matters if defocus angle is nonzero) 
+  , cs_redirectTargets :: [(Double, Point3, Vec3, Vec3)] 
+    -- ^ List of parallelograms to send secondary rays toward (if the material allows it) along with 
+    -- probabilities, which should add up to less than 1. Sending more rays toward lights in 
+    -- scenes with small light sources can lead to faster convergence (i.e. less noise).
   }
 
 -- | By default, the camera is positioned at the origin looking in the negative z direction, with the positive y direction being upward

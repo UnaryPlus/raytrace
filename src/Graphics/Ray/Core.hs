@@ -73,6 +73,10 @@ randomInUnitDisk = do
 data Ray = Ray Point3 Vec3
   deriving (Show)
 
+-- NOTE: I might normalize all ray directions in a future version. This would probably speed up scenes with 
+-- volumes somewhat. If I do this, I should search for all occurences of 'norm', 'quadrance', 'normalize',
+-- and see if they are still necessary.
+
 -- | An interval with a lower bound and an upper bound. 
 -- Variously interpreted as a closed interval or an open interval; it doesn't really matter.
 type Interval = (Double, Double)
@@ -161,3 +165,4 @@ data HitRecord = HitRecord
   , hr_frontSide :: Bool -- ^ Whether the ray hit the "front side" (for a closed surface, the outside).
   , hr_uv :: V2 Double -- ^ The texture coordinates of the intersection.
   }
+  deriving (Show)

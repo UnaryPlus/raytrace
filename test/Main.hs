@@ -14,11 +14,18 @@ import Control.Monad.State (State, runState, state)
 import Control.Monad (forM, replicateM)
 import Control.Applicative (liftA2)
 import Data.Functor.Identity (Identity)
+import Data.Either (fromRight)
 
 sky :: Ray -> Color
 sky (Ray _ (normalize -> V3 _ y _)) = 
   let a = 0.5 * (y + 1) in
   (1 - a) *^ V3 1 1 1 + a *^ V3 0.5 0.7 1
+
+grayFade :: Ray -> Color
+grayFade (Ray _ dir) = let
+  y = component Y dir / norm dir
+  t = (y + 1) * 0.5
+  in t *^ 1
 
 metalTest :: IO ()
 metalTest = let
@@ -315,19 +322,26 @@ demo2 path imageWidth samplesPerPixel maxRecursionDepth = let
 
 pawnTest :: IO ()
 pawnTest = let
-  world mesh = lambertian (checkerTexture 2 2 0.2 0.7) <$ triangleMesh mesh
+  world mesh = 
+    let pawn = triangleMesh mesh in group
+      [ pureGeometry (dielectric 1.5 <$ pawn)
+      , isotropic (constantTexture (V3 1 0 0)) <$ constantMedium 20 pawn
+      ]
   settings = defaultCameraSettings 
-    { cs_center = V3 0 2.5 5
-    , cs_lookAt = V3 0 2.5 0
+    { cs_center = V3 0 3.75 5
+    , cs_lookAt = V3 0 2.75 0
     , cs_imageWidth = 500
-    , cs_samplesPerPixel = 200
+    , cs_vfov = degrees 80
+    , cs_samplesPerPixel = 400
+    , cs_maxRecursionDepth = 20
+    , cs_background = grayFade
     }
   in
   readObj "images/pawn.obj" >>= \case
     Left err -> putStrLn err
     Right mesh -> 
       let mesh' = transformVertices (scale 100) mesh in
-      writeImage "test_image.png" (raytrace settings (world mesh') (mkStdGen 55))
+      writeImage "pawn_demo.png" (raytrace settings (world mesh') (mkStdGen 55))
 
 lommelSeeligerTest :: IO ()
 lommelSeeligerTest = let
@@ -345,6 +359,24 @@ lommelSeeligerTest = let
 
   in writeImage "test_image.png" (raytrace settings world (mkStdGen 55))
 
+bunnyTest :: IO ()
+bunnyTest = let
+  world mesh = lambertian (constantTexture (V3 0.3 0.3 1)) <$ triangleMesh mesh
+
+  settings = defaultCameraSettings 
+    { cs_center = V3 0 0.5 2
+    , cs_lookAt = V3 0 0 0
+    , cs_imageWidth = 600
+    , cs_samplesPerPixel = 100 
+    , cs_background = grayFade
+    }
+
+  in do 
+    mesh <- fromRight undefined <$> readObj "images/bunny.obj"
+    let center = fmap midpoint (boundingBox (triangleMesh mesh))
+    let mesh' = transformVertices (rotateY (degrees 30) !*! scale 12 !*! translate (-center)) mesh
+    writeImage "test_image.png" (raytrace settings (world mesh') (mkStdGen 55))
+
 -- This should take less than 110 seconds without redirection
 cornellTest :: IO ()
 cornellTest = cornellBox 200 50
@@ -354,4 +386,4 @@ demoTest :: IO ()
 demoTest = demo2 "test_image.png" 400 250 4
 
 main :: IO ()
-main = demoTest
+main = pawnTest -- demo2 "demo2_candidate.png" 800 1000 40

@@ -34,10 +34,11 @@ import Data.Char (isDigit)
 import GHC.Base (inline)
 
 -- | A @'Geometry' m a@ has a bounding box (used in the implementation of bounding volume hierarchies),
--- as well as a function that takes a ray and an interval, and in the @m@ monad, produces either @Nothing@
+-- as well as a function that takes a time, a ray, and an open interval, and in the @m@ monad, produces either @Nothing@
 -- (if the ray does not intersect the shape within that interval) or a tuple consisting of a 'HitRecord' and a value of type @a@.
--- Typically, @m@ is either 'Identity' or @'State' 'StdGen'@, and @a@ is either @()@ or 'Geometry.Material.Material'. Use the '(<$)' operator
--- to add a material to a geometry.
+-- The time parameter is between 0 and 1 and allows for motion blur effects.
+-- Typically, @m@ is either 'Identity' or @'State' 'StdGen'@, and @a@ is either @()@ or 'Geometry.Material.Material'. 
+-- Use the '(<$)' operator to add a material to a geometry.
 data Geometry m a = Geometry Box (Double -> Ray -> Interval -> m (Maybe (HitRecord, a)))
 
 instance Functor m => Functor (Geometry m) where
@@ -175,14 +176,13 @@ triangle (p0, uv0) (p1, uv1) (p2, uv2) = let
   getUV a b = (1 - a - b) *^ uv0 + a *^ uv1 + b *^ uv2
   in inline planeShape p0 s1 s2 test getUV bbox
 
--- TODO: make sure that all functions that should be exported are exported
-
 -- | A collection of triangles.
 data Mesh = Mesh 
   (A.Vector U Point3) -- ^ Array of vertex locations.
   (A.Vector U (V2 Double)) -- ^ Array of texture coordinates.
   [V3 (Int, Maybe Int)] -- ^ List of triangles. Each triangle has three vertices, whose locations and (optional) texture coordinates
                         -- are defined by indexing into the two arrays.
+  deriving (Show)
 
 -- | Apply an affine transformation (represented as a 4 by 4 matrix whose bottom row is 0 0 0 1) to the vertices of a mesh.
 transformVertices :: M44 Double -> Mesh -> Mesh
@@ -191,7 +191,7 @@ transformVertices m (Mesh vs vts fs) =
   Mesh vs' vts fs
 
 -- | Parse the .obj file at the given location.
-readObj :: FilePath -> IO (Either String Mesh)
+readObj :: FilePath -> IO (Either String Mesh) -- TODO: use IO exceptions instead of Either?
 readObj path = first ((path ++ ", ") ++) . parseObj <$> readFile path
 
 -- | Parse a Wavefront .obj file.
@@ -293,11 +293,11 @@ triangleMesh (Mesh verts uvs tris) =
     uv2 = maybe (V2 0 1) (uvs !) j2
     in triangle (verts ! i0, uv0) (verts ! i1, uv1) (verts ! i2, uv2)
 
--- | Construct a constant-density medium (like fog or smoke). 
--- Typical materials are 'Graphics.Material.isotropic' and 'Graphics.Material.pitchBlack'.
+-- | Construct a constant-density medium; useful for subsurface scattering and fog effects.
+-- Typical materials are 'Graphics.Material.isotropic', 'Graphics.Material.anisotropic', and 'Graphics.Material.pitchBlack'.
 constantMedium
   :: Double -- ^ Density 
-  -> Geometry Identity () -- ^ Surface
+  -> Geometry Identity () -- ^ Surface (assumed to be a closed surface with the \"front side\" facing outwards)
   -> Geometry (State StdGen) ()
 constantMedium density (Geometry bbox hitObj) = let
   negInvDensity = -(1 / density)
@@ -308,7 +308,7 @@ constantMedium density (Geometry bbox hitObj) = let
             if hr_frontSide hit1 
               then do
                 guard (hr_t hit1 < tmax)
-                (hit2, ()) <- runIdentity (hitObj time ray (hr_t hit1, infinity)) -- TODO: it is crucial here that Intervals are interpreted as open intervals
+                (hit2, ()) <- runIdentity (hitObj time ray (hr_t hit1, infinity))
                 Just (hr_t hit1, min tmax (hr_t hit2))
               else Just (tmin, min tmax (hr_t hit1))
     of
@@ -323,7 +323,7 @@ constantMedium density (Geometry bbox hitObj) = let
                   { hr_t = t
                   , hr_point = orig + t *^ dir
                   , hr_normal = V3 0 0 1 -- arbitrary
-                  , hr_frontSide = True -- arbitrary
+                  , hr_frontSide = True
                   , hr_uv = V2 0 0 -- arbitrary
                   }
             Just (hit, ())
@@ -444,6 +444,7 @@ scale a = V4
 dropLast :: V4 a -> V3 a
 dropLast (V4 x y z _) = V3 x y z
 
+-- TODO: this produces incorrect results for objects with solid textures
 -- | Create a motion-blurred object that is translated by the first vector at time 0
 -- and by the second vector at time 1.
 moving :: Functor m => Vec3 -> Vec3 -> Geometry m a -> Geometry m a
