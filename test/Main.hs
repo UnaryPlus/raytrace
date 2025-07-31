@@ -1,22 +1,30 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE PartialTypeSignatures #-}
-{-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE TupleSections #-}
 module Main where
 
 import Graphics.Ray
 
-import Linear (V3(V3), (*^), normalize, norm, (!*!))
+import Linear (V3(V3), (*^), norm, (!*!))
 import System.Random (StdGen, newStdGen, randomR, random, mkStdGen)
 import Control.Monad.State (State, runState, state)
 import Control.Monad (forM, replicateM)
 import Control.Applicative (liftA2)
 import Data.Functor.Identity (Identity)
+import Data.Either (fromRight)
 
 sky :: Ray -> Color
-sky (Ray _ (normalize -> V3 _ y _)) = 
+sky (Ray _ (V3 _ y _)) = 
   let a = 0.5 * (y + 1) in
   (1 - a) *^ V3 1 1 1 + a *^ V3 0.5 0.7 1
+
+grayFade :: Ray -> Color
+grayFade (Ray _ dir) = let
+  y = component Y dir
+  t = (y + 1) * 0.5
+  in t *^ 1
 
 metalTest :: IO ()
 metalTest = let
@@ -140,7 +148,7 @@ demo1 = let
 
   genWorld :: State StdGen (Geometry Identity Material)
   genWorld = do
-    fmap (bvhTree . autoTree . (bigSpheres ++) . concat) $ forM (liftA2 (,) [-11..10] [-11..10]) $ \(a, b) -> do
+    fmap (bvhTree . (bigSpheres ++) . concat) $ forM (liftA2 (,) [-11..10] [-11..10]) $ \(a, b) -> do
       offsetX <- state (randomR (0, 0.9))
       offsetZ <- state (randomR (0, 0.9))
       let center = V3 (a + offsetX) 0.2 (b + offsetZ)
@@ -203,9 +211,10 @@ cornellBox samplesPerPixel maxRecurionDepth = let
     , cs_vfov = degrees 40
     , cs_center = V3 278 278 (-800)
     , cs_lookAt = V3 278 278 0
+    , cs_redirectTargets = [ (0.25, V3 343 554 332, V3 (-130) 0 0, V3 0 0 (-105)) ]
     }
 
-  in writeImageSqrt "cornell_box.png" . raytrace settings world =<< newStdGen
+  in writeImageSqrt "cornell_box.png" $ raytrace settings world (mkStdGen 234)
 
 cornellSmoke :: IO ()
 cornellSmoke = let
@@ -241,6 +250,7 @@ cornellSmoke = let
     , cs_vfov = degrees 40
     , cs_center = V3 278 278 (-800)
     , cs_lookAt = V3 278 278 0
+    , cs_redirectTargets = [ (0.25, V3 113 554 127, V3 330 0 0, V3 0 0 305) ]
     }
 
   in writeImageSqrt "cornell_smoke.png" . raytrace settings world =<< newStdGen
@@ -252,7 +262,7 @@ demo2 path imageWidth samplesPerPixel maxRecursionDepth = let
 
   generateBoxes :: State StdGen (Geometry Identity Material)
   generateBoxes = 
-    fmap ((ground <$) . bvhTree . autoTree) $ 
+    fmap ((ground <$) . bvhTree) $ 
     forM (liftA2 (,) [0..19] [0..19]) $ \(i, j) -> do
       let x0 = -1000 + i * 100
       let z0 = -1000 + j * 100
@@ -264,16 +274,17 @@ demo2 path imageWidth samplesPerPixel maxRecursionDepth = let
   
   generateBalls :: State StdGen (Geometry Identity Material)
   generateBalls =
-    fmap ((white <$) . transform (translate (V3 (-100) 270 395) !*! rotateY (degrees 15)) . bvhTree . autoTree) $
+    fmap ((white <$) . transform (translate (V3 (-100) 270 395) !*! rotateY (degrees 15)) . bvhTree) $
     replicateM 1000 $ do
       p <- state (randomR (0, 165)) 
       pure (sphere p 10)
   
   boundary = sphere (V3 360 150 145) 70 
+  light f = f (V3 123 554 147) (V3 300 0 0) (V3 0 0 265)
   
   largeObjects earth =
-    [ lightSource (constantTexture (V3 7 7 7)) <$ parallelogram (V3 123 554 147) (V3 300 0 0) (V3 0 0 265)
-    , lambertian (constantTexture (V3 0.7 0.3 0.1)) <$ sphere (V3 415 400 200) 50
+    [ lightSource (constantTexture (V3 7 7 7)) <$ light parallelogram
+    , lambertian (constantTexture (V3 0.7 0.3 0.1)) <$ moving 0 (V3 30 0 0) (sphere (V3 400 400 200) 50)
     , dielectric 1.5 <$ sphere (V3 260 150 45) 50
     , dielectric 1.5 <$ boundary
     , metal 1.0 (constantTexture (V3 0.8 0.8 0.9)) <$ sphere (V3 0 150 145) 50
@@ -299,21 +310,81 @@ demo2 path imageWidth samplesPerPixel maxRecursionDepth = let
     , cs_samplesPerPixel = samplesPerPixel
     , cs_maxRecursionDepth = maxRecursionDepth
     , cs_background = const 0
+    , cs_redirectTargets = [ light (0.25,,,) ]
     }
 
   in do
     earth <- readImage "images/earthmap.jpg"
-    seed <- newStdGen
+    let seed = mkStdGen 1234
     let (world, seed') = runState (generateWorld earth) seed
     writeImageSqrt path (raytrace settings world seed')
 
--- This should take less than 110 seconds
+pawnTest :: IO ()
+pawnTest = let
+  world mesh = 
+    let pawn = triangleMesh mesh in group
+      [ pureGeometry (dielectric 1.5 <$ pawn)
+      , isotropic (constantTexture (V3 1 0 0)) <$ constantMedium 5 pawn
+      ]
+  settings = defaultCameraSettings 
+    { cs_center = V3 0 3.75 5
+    , cs_lookAt = V3 0 2.75 0
+    , cs_imageWidth = 500
+    , cs_vfov = degrees 80
+    , cs_samplesPerPixel = 400
+    , cs_maxRecursionDepth = 20
+    , cs_background = grayFade
+    }
+  in
+  readObj "images/pawn.obj" >>= \case
+    Left err -> putStrLn err
+    Right mesh -> 
+      let mesh' = transformVertices (scale 100) mesh in
+      writeImage "pawn_demo.png" (raytrace settings (world mesh') (mkStdGen 55))
+
+lommelSeeligerTest :: IO ()
+lommelSeeligerTest = let
+  world = group
+    [ lommelSeeliger (constantTexture 1) <$ sphere (V3 0 0 (-2)) 1
+    , lightSource (constantTexture 160) <$ sphere (V3 0 0 22) 1
+    ]
+
+  settings = defaultCameraSettings
+    { cs_imageWidth = 500
+    , cs_samplesPerPixel = 500
+    , cs_background = const 0
+    , cs_redirectTargets = [ (0.5, V3 (-1) (-1) 21, V3 2 0 0, V3 0 2 0) ]
+    }
+
+  in writeImage "test_image.png" (raytrace settings world (mkStdGen 55))
+
+bunnyTest :: IO ()
+bunnyTest = let
+  world mesh = lambertian (constantTexture (V3 0.3 0.3 1)) <$ triangleMesh mesh
+
+  settings = defaultCameraSettings 
+    { cs_center = V3 0 0.5 2
+    , cs_lookAt = V3 0 0 0
+    , cs_imageWidth = 600
+    , cs_samplesPerPixel = 100 
+    , cs_background = grayFade
+    }
+
+  in do 
+    mesh <- fromRight undefined <$> readObj "images/bunny.obj"
+    let center = fmap midpoint (boundingBox (triangleMesh mesh))
+    let mesh' = transformVertices (rotateY (degrees 30) !*! scale 12 !*! translate (-center)) mesh
+    writeImage "test_image.png" (raytrace settings (world mesh') (mkStdGen 55))
+
+-- Version 0.1.0.0: ~1:45 (without redirection)
+-- Version 0.2.0.0: ~1:00 with redirection, ~2:00 without
 cornellTest :: IO ()
 cornellTest = cornellBox 200 50
 
--- This should take less than 70 seconds
+-- Version 0.1.0.0: ~1:05 (without redirection)
+-- Version 0.2.0.0: ~1:05 with redirection, ~1:10 without
 demoTest :: IO ()
 demoTest = demo2 "test_image.png" 400 250 4
 
 main :: IO ()
-main = noiseTest
+main = demoTest

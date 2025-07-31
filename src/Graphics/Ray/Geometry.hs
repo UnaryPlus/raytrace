@@ -1,21 +1,26 @@
 {-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE ViewPatterns #-}
 module Graphics.Ray.Geometry 
   ( -- * Geometry
-    Geometry(Geometry), pureGeometry, boundingBox
+    Geometry(Geometry), boundingBox, pureGeometry, transform, moving
     -- * Surfaces and Volumes
-  , sphere, parallelogram, cuboid, constantMedium
+  , sphere, planeShape, parallelogram, cuboid, triangle, triangleMesh, constantMedium
+    -- * Polygonal Meshes
+  , Mesh(Mesh), transformVertices, parseObj, readObj
     -- * Groups
-  , group, bvhNode, Tree(Leaf, Node), bvhTree, autoTree
+  , group, bvhNode, bvhTree
     -- * Transformations
-  , transform, translate, rotateX, rotateY, rotateZ
+  , translate, rotateX, rotateY, rotateZ, scale
   ) where
 
 import Graphics.Ray.Core
 
 import Linear (V2(V2), V3(V3), dot, quadrance, (*^), (^/), cross, norm, M44, inv44, (!*), V4(V4))
 import qualified Linear.V4 as V4
+import Data.Massiv.Array (U, (!))
+import qualified Data.Massiv.Array as A
 import System.Random (StdGen, random)
 import Control.Monad.State (State, state)
 import Control.Monad (guard, foldM)
@@ -24,22 +29,26 @@ import Data.List (sortOn)
 import Data.Bifunctor (first, second)
 import Data.Functor.Identity (Identity(Identity), runIdentity)
 import Data.Functor ((<&>))
+import Text.Read (readMaybe)
+import Data.Char (isDigit)
+import GHC.Base (inline)
 
 -- | A @'Geometry' m a@ has a bounding box (used in the implementation of bounding volume hierarchies),
--- as well as a function that takes a ray and an interval, and in the @m@ monad, produces either @Nothing@
+-- as well as a function that takes a time, a ray, and an open interval, and in the @m@ monad, produces either @Nothing@
 -- (if the ray does not intersect the shape within that interval) or a tuple consisting of a 'HitRecord' and a value of type @a@.
--- Typically, @m@ is either 'Identity' or @'State' 'StdGen'@, and @a@ is either @()@ or 'Geometry.Material.Material'. Use the '(<$)' operator
--- to add a material to a geometry.
-data Geometry m a = Geometry Box (Ray -> Interval -> m (Maybe (HitRecord, a)))
+-- The time parameter is between 0 and 1 and allows for motion blur effects.
+-- Typically, @m@ is either 'Identity' or @'State' 'StdGen'@, and @a@ is either @()@ or 'Geometry.Material.Material'. 
+-- Use the '(<$)' operator to add a material to a geometry.
+data Geometry m a = Geometry Box (Double -> Ray -> Interval -> m (Maybe (HitRecord, a)))
 
 instance Functor m => Functor (Geometry m) where
   {-# SPECIALISE fmap :: (a -> b) -> Geometry Identity a -> Geometry Identity b #-}
   fmap :: (a -> b) -> Geometry m a -> Geometry m b
-  fmap f (Geometry bbox hit) = Geometry bbox (\ray ival -> fmap (fmap (second f)) (hit ray ival))
+  fmap f (Geometry bbox hit) = Geometry bbox (\ray time ival -> fmap (fmap (second f)) (hit ray time ival))
 
 -- | Promote a pure geometry to a monadic one.
 pureGeometry :: Applicative m => Geometry Identity a -> Geometry m a
-pureGeometry (Geometry bbox f) = Geometry bbox (\ray ival -> pure (runIdentity (f ray ival)))
+pureGeometry (Geometry bbox f) = Geometry bbox (\ray time ival -> pure (runIdentity (f ray time ival)))
 
 -- | Get a geometry's bounding box.
 boundingBox :: Geometry m a -> Box
@@ -51,18 +60,17 @@ sphere center radius = let
   diag = V3 radius radius radius
   bbox = fromCorners (center - diag) (center + diag)
 
-  hitSphere (Ray orig dir) bounds = Identity $ do
+  hitSphere _ (Ray orig dir) bounds = Identity $ do
     let oc = center - orig
-    let a = quadrance dir
     let h = dot dir oc 
     let c = quadrance oc - radius*radius
 
-    let discriminant = h*h - a*c
+    let discriminant = h*h - c
     guard (discriminant >= 0)
     
     let sqrtd = sqrt discriminant
-    let root1 = (h - sqrtd) / a
-    let root2 = (h + sqrtd) / a
+    let root1 = h - sqrtd
+    let root2 = h + sqrtd
 
     t <- 
       if inInterval bounds root1 
@@ -95,30 +103,33 @@ sphereUV (V3 x y z) = V2 u v
     u = atan2 x z / (2 * pi) + 0.5
     v = acos (-y) / pi 
 
--- | Construct a parallelogram from a corner point and two edge vectors.
+-- | Construct a subset of a plane. (See 'parallelogram' and 'triangle' for two instances of this.)
 -- Which side is the \"front side\" is determined by the right hand rule.
-parallelogram :: Point3 -> Vec3 -> Vec3 -> Geometry Identity ()
-parallelogram q u v = let
+{-# INLINABLE planeShape #-}
+planeShape 
+  :: Point3 -- ^ (0, 0) point on the plane
+  -> Vec3 -- ^ First basis vector
+  -> Vec3 -- ^ Second basis vector
+  -> (Double -> Double -> Bool) -- ^ Whether a point on the plane is in the shape
+  -> (Double -> Double -> V2 Double) -- ^ Texture coordinates
+  -> Box -- ^ Bounding box (this is padded by a small amount to ensure all dimensions are positive)
+  -> Geometry Identity ()
+planeShape q u v test getUV bbox = let
   cp = cross u v
-  area = norm cp
-  normal = cp ^/ area
-  normalS = normal ^/ area
-  n_dot_q = dot normal q
+  norm_cp = norm cp
+  normal = cp ^/ norm_cp
+  normalS = normal ^/ norm_cp
 
-  box1 = fromCorners q (q + u + v)
-  box2 = fromCorners (q + u) (q + v)
-  bbox = padBox 0.0001 (boxJoin box1 box2)
-  
-  hitParallelogram (Ray orig dir) bounds = Identity $ do
+  hitShape _ (Ray orig dir) bounds = Identity $ do
     let denom = dot normal dir
     guard (abs denom > 1e-8)
-    let t = (n_dot_q - dot normal orig) / denom
+    let t = dot normal (q - orig) / denom
     guard (inInterval bounds t)
     let p = orig + t *^ dir
     let p_rel = p - q
     let a = normalS `dot` (p_rel `cross` v)
     let b = normalS `dot` (u `cross` p_rel)
-    guard (0 <= a && a <= 1 && 0 <= b && b <= 1)
+    guard (test a b)
     let frontSide = denom < 0
 
     let hit = HitRecord
@@ -126,11 +137,18 @@ parallelogram q u v = let
           , hr_point = p
           , hr_normal = if frontSide then normal else -normal
           , hr_frontSide = frontSide
-          , hr_uv = V2 a b
+          , hr_uv = getUV a b
           }
     Just (hit, ())
 
-  in Geometry bbox hitParallelogram 
+  in Geometry (padBox 0.0001 bbox) hitShape
+
+-- | Construct a parallelogram from a corner point and two edge vectors.
+parallelogram :: Point3 -> Vec3 -> Vec3 -> Geometry Identity ()
+parallelogram q u v = let
+  bbox = boxHull [ q, q + u, q + v, q + u + v ] 
+  test a b = 0 <= a && a <= 1 && 0 <= b && b <= 1
+  in inline planeShape q u v test V2 bbox
 
 -- | Construct an axis-aligned rectangular cuboid (implemented as a 'group' of parallelograms).
 cuboid :: Box -> Geometry Identity ()
@@ -147,36 +165,165 @@ cuboid (V3 (xmin, xmax) (ymin, ymax) (zmin, zmax)) = let
     , parallelogram (V3 xmin ymin zmin) dx dz -- bottom
     ]
 
--- | Construct a constant-density medium (like fog or smoke). 
--- Typical materials are 'Graphics.Material.isotropic' and 'Graphics.Material.pitchBlack'.
+-- | Construct a triangle from three corner points and their texture coordinates.
+triangle :: (Point3, V2 Double) -> (Point3, V2 Double) -> (Point3, V2 Double) -> Geometry Identity ()
+triangle (p0, uv0) (p1, uv1) (p2, uv2) = let
+  s1 = p1 - p0
+  s2 = p2 - p0
+  bbox = boxHull [ p0, p1, p2 ]
+  test a b = a >= 0 && b >= 0 && a + b <= 1
+  getUV a b = (1 - a - b) *^ uv0 + a *^ uv1 + b *^ uv2
+  in inline planeShape p0 s1 s2 test getUV bbox
+
+-- | A collection of triangles.
+data Mesh = Mesh 
+  (A.Vector U Point3) -- ^ Array of vertex locations.
+  (A.Vector U (V2 Double)) -- ^ Array of texture coordinates.
+  [V3 (Int, Maybe Int)] -- ^ List of triangles. Each triangle has three vertices, whose locations and (optional) texture coordinates
+                        -- are defined by indexing into the two arrays.
+  deriving (Show)
+
+-- | Apply an affine transformation (represented as a 4 by 4 matrix whose bottom row is 0 0 0 1) to the vertices of a mesh.
+transformVertices :: M44 Double -> Mesh -> Mesh
+transformVertices m (Mesh vs vts fs) = 
+  let vs' = A.compute (A.map (dropLast . (m !*) . V4.point) vs) in
+  Mesh vs' vts fs
+
+-- TODO: use IO exceptions instead of Either?
+-- | Parse the .obj file at the given location.
+readObj :: FilePath -> IO (Either String Mesh) 
+readObj path = first ((path ++ ", ") ++) . parseObj <$> readFile path
+
+-- | Parse a Wavefront .obj file.
+--
+-- * Comments beginning with @#@ are ignored, as are all lines that do not
+--   begin with @v @, @vt @, or @f @. 
+-- * Faces with more than three vertices are allowed, but are triangulated before
+--   adding them to the 'Mesh' object.
+-- * Indices can be either positive or negative. For example, if there are 20
+--   @v@ statements in the file, the vertex indices of a face must be in the
+--   range [1, 20] or [-20, -1], with -1 meaning the last vertex. In either case,
+--   they are converted into 0-based indices.
+parseObj :: String -> Either String Mesh
+parseObj file = do
+  let (vLines, vtLines, fLines) = partitionLines (removeComments file)
+  vs <- mapM parseV vLines
+  vts <- mapM parseVT vtLines
+  fs <- concat <$> mapM (parseF (length vs) (length vts)) fLines
+  Right (Mesh (A.fromList A.Seq vs) (A.fromList A.Seq vts) fs)
+  
+  where
+    removeComments :: String -> [String]
+    removeComments = map (takeWhile (/= '#')) . lines
+
+    partitionLines :: [String] -> ([(Int, String)], [(Int, String)], [(Int, String)])
+    partitionLines = foldr addLine ([], [], []) . zip [1..]
+
+    addLine (k, line) (vs, vts, fs) =
+      case line of
+        'v':' ':rest -> ((k, rest) : vs, vts, fs)
+        'v':'t':' ':rest -> (vs, (k, rest) : vts, fs)
+        'f':' ':rest -> (vs, vts, (k, rest) : fs)
+        _ -> (vs, vts, fs)
+
+    withLine :: Int -> String -> String
+    withLine k err = "line " ++ show k ++ ": " ++ err
+    
+    -- a 'v' statement must begin with three decimal numbers
+    parseV (k, line) = 
+      case words line of
+        (readMaybe -> Just x) : (readMaybe -> Just y) : (readMaybe -> Just z) : _ -> Right (V3 x y z)
+        _ -> Left (withLine k "invalid 'v' statement")
+    
+    -- a 'vt' statement must begin with two decimal numbers (or consist of a single decimal number, in which case v defaults to 0)
+    parseVT (k, line) =
+      case words line of
+        [readMaybe -> Just u] -> Right (V2 u 0)
+        (readMaybe -> Just u) : (readMaybe -> Just v) : _ -> Right (V2 u v)
+        _ -> Left (withLine k "invalid 'vt' statement")
+
+    parseF numVs numVTs (k, line) = 
+      case mapM (getIndices numVs numVTs) (words line) of
+          Left err -> Left (withLine k err)
+          Right (i:is) | length is >= 2 -> Right (map (uncurry (V3 i)) (pairs is))
+          Right _ -> Left (withLine k "invalid 'f' statement (fewer than 3 vertices)")
+
+    pairs :: [a] -> [(a, a)]
+    pairs = \case
+      [] -> []
+      [_] -> []
+      x:xs@(y:_) -> (x, y) : pairs xs
+
+    processIx len i 
+      | 1 <= i && i <= len = Right (i - 1)
+      | -len <= i && i <= -1 = Right (i + len)
+      | otherwise = Left ("index out of bounds: " ++ show i)
+
+    getIndices :: Int -> Int -> String -> Either String (Int, Maybe Int)
+    getIndices numVs numVTs str = do
+      (i, rest) <- extractInt str
+      i' <- processIx numVs i
+      case rest of
+        "" -> Right (i', Nothing)
+        '/':'/':_ -> Right (i', Nothing)
+        '/':str' -> do
+          (j, _) <- extractInt str'
+          j' <- processIx numVTs j
+          Right (i', Just j')
+        c:_ -> Left ("unexpected character '" ++ c : "'")
+
+    extractInt :: String -> Either String (Int, String)
+    extractInt = \case
+      '-':str -> first negate <$> extractNat str
+      str -> extractNat str
+    
+    extractNat :: String -> Either String (Int, String)
+    extractNat str = 
+      let (ds, rest) = span isDigit str in
+      case readMaybe ds of
+        Nothing -> Left "expected number"
+        Just i -> Right (i, rest)
+
+-- | Realize a 'Mesh' as a 'Geometry' (implemented as a 'bvhTree' of triangles).
+triangleMesh :: Mesh -> Geometry Identity ()
+triangleMesh (Mesh verts uvs tris) = 
+  bvhTree $ flip map tris $ \(V3 (i0, j0) (i1, j1) (i2, j2)) -> let
+    uv0 = maybe (V2 0 0) (uvs !) j0
+    uv1 = maybe (V2 1 0) (uvs !) j1
+    uv2 = maybe (V2 0 1) (uvs !) j2
+    in triangle (verts ! i0, uv0) (verts ! i1, uv1) (verts ! i2, uv2)
+
+-- | Construct a constant-density medium; useful for subsurface scattering and fog effects.
+-- Typical materials are 'Graphics.Material.isotropic', 'Graphics.Material.anisotropic', and 'Graphics.Material.pitchBlack'.
 constantMedium
   :: Double -- ^ Density 
-  -> Geometry Identity () -- ^ Surface (assumed to be convex in current implementation)
+  -> Geometry Identity () -- ^ Surface (assumed to be a closed surface with the \"front side\" facing outwards)
   -> Geometry (State StdGen) ()
 constantMedium density (Geometry bbox hitObj) = let
   negInvDensity = -(1 / density)
 
-  hitMedium :: Ray -> Interval -> State StdGen (Maybe (HitRecord, ()))
-  hitMedium ray@(Ray orig dir) (tmin, tmax) = 
-    case do (hit1, ()) <- runIdentity (hitObj ray (-infinity, infinity))
-            (hit2, ()) <- runIdentity (hitObj ray (hr_t hit1, infinity))
-            let t1 = max tmin (hr_t hit1)
-            let t2 = min tmax (hr_t hit2)
-            guard (t1 < t2)
-            Just (t1, t2, hit1) of
+  hitMedium :: Double -> Ray -> Interval -> State StdGen (Maybe (HitRecord, ()))
+  hitMedium time ray@(Ray orig dir) (tmin, tmax) = 
+    case do (hit1, ()) <- runIdentity (hitObj time ray (tmin, infinity)) 
+            if hr_frontSide hit1 
+              then do
+                guard (hr_t hit1 < tmax)
+                (hit2, ()) <- runIdentity (hitObj time ray (hr_t hit1, infinity))
+                Just (hr_t hit1, min tmax (hr_t hit2))
+              else Just (tmin, min tmax (hr_t hit1))
+    of
       Nothing -> pure Nothing -- ray is never in fog within interval
-      Just (t1, t2, hit1) -> state random <&> \rand ->
-         do let rayScale = norm dir
-            let inDist = (t2 - t1) * rayScale
+      Just (t1, t2) -> state random <&> \rand ->
+         do let inDist = t2 - t1
             let hitDist = negInvDensity * log rand
             guard (hitDist < inDist)
-            let t = t1 + hitDist / rayScale
+            let t = t1 + hitDist
             let hit = HitRecord
                   { hr_t = t
                   , hr_point = orig + t *^ dir
-                  , hr_normal = hr_normal hit1
-                  , hr_frontSide = hr_frontSide hit1
-                  , hr_uv = hr_uv hit1
+                  , hr_normal = -dir -- arbitrary
+                  , hr_frontSide = True
+                  , hr_uv = V2 0 0 -- arbitrary
                   }
             Just (hit, ())
 
@@ -188,11 +335,11 @@ constantMedium density (Geometry bbox hitObj) = let
 {-# SPECIALISE group :: [Geometry Identity a] -> Geometry Identity a #-}
 group :: Monad m => [Geometry m a] -> Geometry m a
 group obs = let
-  bbox = boxHull (map boundingBox obs)
-  
-  hitGroup ray (tmin, tmax) =
+  bbox = boxJoin (map boundingBox obs)
+
+  hitGroup ray time (tmin, tmax) =
     let try (tmax', knownHit) (Geometry _ hitObj) =
-          hitObj ray (tmin, tmax') <&> \case
+          hitObj ray time (tmin, tmax') <&> \case
             Nothing -> (tmax', knownHit)
             Just (hit, mat) -> (hr_t hit, Just (hit, mat))
     in snd <$> foldM try (tmax, Nothing) obs
@@ -204,49 +351,43 @@ group obs = let
 {-# SPECIALISE bvhNode :: Geometry Identity a -> Geometry Identity a -> Geometry Identity a #-}
 bvhNode :: Monad m => Geometry m a -> Geometry m a -> Geometry m a
 bvhNode (Geometry bboxLeft hitLeft) (Geometry bboxRight hitRight) = let
-  bbox = boxJoin bboxLeft bboxRight
+  bbox = boxJoin [bboxLeft, bboxRight]
 
-  hitBvhNode ray (tmin, tmax)
+  hitBvhNode time ray (tmin, tmax)
     | overlapsBox bbox ray (tmin, tmax) = 
-      hitLeft ray (tmin, tmax) >>= \case
-        Nothing -> hitRight ray (tmin, tmax)
-        res@(Just (hit, _)) -> fmap (<|> res) (hitRight ray (tmin, hr_t hit))
+      hitLeft time ray (tmin, tmax) >>= \case
+        Nothing -> hitRight time ray (tmin, tmax)
+        res@(Just (hit, _)) -> fmap (<|> res) (hitRight time ray (tmin, hr_t hit))
     | otherwise = pure Nothing
   
   in Geometry bbox hitBvhNode
 
-data Tree a = Leaf a | Node (Tree a) (Tree a)
-
--- | Group multiple geometric objects (organized as a tree) into a single object. A bounding box is created for every subtree of the 
--- given tree; if a ray does not intersect the bounding box, it cannot hit any of the child objects, so none of
--- them need to be tested further.
-{-# SPECIALISE bvhTree :: Tree (Geometry Identity a) -> Geometry Identity a #-}
-bvhTree :: Monad m => Tree (Geometry m a) -> Geometry m a
+-- | Group multiple geometric objects into a single object. 
+-- The objects are organized into a tree based on their positions, and then a 'bvhNode'
+-- is created for each node in the tree.
+{-# SPECIALISE bvhTree :: [Geometry Identity a] -> Geometry Identity a #-}
+bvhTree :: Monad m => [Geometry m a] -> Geometry m a
 bvhTree = \case
-  Leaf a -> a
-  Node left right -> bvhNode (bvhTree left) (bvhTree right)
-
--- | Organize the geometric objects into a tree based on their positions.
-autoTree :: [Geometry m a] -> Tree (Geometry m a)
-autoTree = \case
-  [] -> error "autoTree: empty list"
-  [obj] -> Leaf obj
+  [] -> error "bvhTree: empty list"
+  [obj] -> obj
   obs -> let
-    d = longestDim (boxHull (map boundingBox obs))
+    d = longestDim (boxJoin (map boundingBox obs))
     obs' = sortOn (midpoint . component d . boundingBox) obs
     (left, right) = splitAt (length obs `div` 2) obs'
-    in Node (autoTree left) (autoTree right)
+    in bvhNode (bvhTree left) (bvhTree right)
 
 -- | Apply an affine transformation (represented as a 4 by 4 matrix whose bottom row is 0 0 0 1) to a geometric object.
+-- The transformation should be Euclidean (translation, rotation, reflection, or a composition thereof); otherwise, the
+-- normal vectors of the resulting geometry will be incorrect.
 transform :: Functor m => M44 Double -> Geometry m a -> Geometry m a
 transform m (Geometry bbox hitObj) = let
   m34 = dropLast m
   inv_m = dropLast (inv44 m)
-  cornerCoords = mapM ((m34 !*) . V4.point) (allCorners bbox) :: V3 [Double]
-  bbox' = fromCorners (fmap minimum cornerCoords) (fmap maximum cornerCoords)
-  in Geometry bbox' $ \(Ray orig dir) ival ->
+  corners = map ((m34 !*) . V4.point) (allCorners bbox)
+  bbox' = boxHull corners
+  in Geometry bbox' $ \time (Ray orig dir) ival ->
     let ray' = Ray (inv_m !* V4.point orig) (inv_m !* V4.vector dir) in
-    flip (fmap . fmap . first) (hitObj ray' ival) $ \hit@(HitRecord {..}) ->
+    flip (fmap . fmap . first) (hitObj time ray' ival) $ \hit@(HitRecord {..}) ->
       hit { hr_point = m34 !* V4.point hr_point, hr_normal = m34 !* V4.vector hr_normal }
 
 -- | Translation.
@@ -290,6 +431,26 @@ rotateZ angle = V4
     c = cos angle
     s = sin angle
 
+-- | Scaling centered at the origin. This should not be used with 'transform'.
+scale :: Double -> M44 Double
+scale a = V4
+  (V4 a 0 0 0)
+  (V4 0 a 0 0)
+  (V4 0 0 a 0)
+  (V4 0 0 0 1)
+
 -- [private]
 dropLast :: V4 a -> V3 a
 dropLast (V4 x y z _) = V3 x y z
+
+-- TODO: this produces incorrect results for objects with solid textures
+-- | Create a motion-blurred object that is translated by the first vector at time 0
+-- and by the second vector at time 1.
+moving :: Functor m => Vec3 -> Vec3 -> Geometry m a -> Geometry m a
+moving v0 v1 (Geometry bbox hitObj) =
+  let bbox' = boxJoin [shiftBox v0 bbox, shiftBox v1 bbox] in
+  Geometry bbox' $ \time (Ray orig dir) ival -> let
+    shift = (1 - time) *^ v0 + time *^ v1
+    ray' = Ray (orig - shift) dir
+    in flip (fmap . fmap . first) (hitObj time ray' ival) $ \hit -> 
+      hit { hr_point = hr_point hit + shift }

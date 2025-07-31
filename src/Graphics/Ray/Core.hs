@@ -6,7 +6,7 @@ module Graphics.Ray.Core
     -- * Intervals
   , Interval, inInterval, midpoint, padInterval
     -- * Boxes
-  , Box, fromCorners, boxJoin, boxHull, allCorners, padBox, longestDim, overlapsBox
+  , Box, fromCorners, boxJoin, boxHull, allCorners, padBox, shiftBox, longestDim, overlapsBox
     -- * Hit Records
   , HitRecord(..)
   ) where
@@ -16,7 +16,7 @@ import System.Random (RandomGen, randomR)
 import Control.Monad.State (MonadState, state)
 import Control.Applicative (liftA2)
 import Data.Maybe (isJust)
-import Data.Foldable (foldl')
+import Data.List (foldl1')
 
 -- | Floating-point infinity.
 infinity :: Double
@@ -46,7 +46,6 @@ argMax (V3 x y z)
   | otherwise = if y > z then Y else Z
 
 -- | If @n@ is the normal vector of a mirror, and @v@ is an incoming light ray, then @reflect n v@ is the outgoing light ray.
--- The first argument should be a unit vector, but the second need not be.
 reflect :: Vec3 -> Vec3 -> Vec3
 reflect normal v = 
   v - 2 * dot normal v *^ normal
@@ -68,20 +67,19 @@ randomInUnitDisk = do
     then pure vec
     else randomInUnitDisk
 
--- | A ray with an origin and a direction. Points on the ray @Ray orig dir@ are parametrized by @orig + t *^ dir@.
--- There is no expectation that the direction be a unit vector.
+-- | A ray with an origin and a direction (which is always a unit vector). 
+-- Points on the ray @Ray orig dir@ are parametrized by @orig + t *^ dir@.
 data Ray = Ray Point3 Vec3
   deriving (Show)
 
--- | An interval with a lower bound and an upper bound. 
--- Variously interpreted as a closed interval or an open interval; it doesn't really matter.
+-- | An interval with a lower bound and an upper bound.
 type Interval = (Double, Double)
 
 -- [private]
 size :: Interval -> Double
 size (a, b) = b - a
 
--- | Test whether a number is in the interval.
+-- | Test whether a number is in the interval (interpreted as an open interval).
 inInterval :: Interval -> Double -> Bool
 inInterval (tmin, tmax) t = tmin < t && t < tmax
 
@@ -114,16 +112,20 @@ type Box = V3 Interval
 fromCorners :: Point3 -> Point3 -> Box
 fromCorners = liftA2 (\x y -> if x < y then (x, y) else (y, x))
 
--- | The smallest box containing two boxes.
-boxJoin :: Box -> Box -> Box
-boxJoin = liftA2 (\(min1, max1) (min2, max2) -> (min min1 min2, max max1 max2))
-
 -- | The smallest box containing all of the boxes.
-boxHull :: [Box] -> Box
-boxHull = foldl' boxJoin (V3 (infinity, -infinity) (infinity, -infinity) (infinity, -infinity))
+boxJoin :: [Box] -> Box
+boxJoin = foldl1' (liftA2 (\(min1, max1) (min2, max2) -> (min min1 min2, max max1 max2))) 
+
+-- | The smallest box containing all of the points.
+boxHull :: [Point3] -> Box
+boxHull pts = let
+  coords = sequence pts
+  mins = fmap minimum coords
+  maxs = fmap maximum coords
+  in liftA2 (,) mins maxs
 
 -- | Get a list of all eight corners of a box.
-allCorners :: Box -> [ Point3 ]
+allCorners :: Box -> [Point3]
 allCorners (V3 i1 i2 i3) = 
   [ V3 (f1 i1) (f2 i2) (f3 i3) 
   | f1 <- [ fst, snd ], f2 <- [ fst, snd ], f3 <- [ fst, snd ]
@@ -132,6 +134,10 @@ allCorners (V3 i1 i2 i3) =
 -- | Extend the box by the first argument in all six directions.
 padBox :: Double -> Box -> Box
 padBox padding = fmap (padInterval padding)
+
+-- | Translate the box by the given vector.
+shiftBox :: Vec3 -> Box -> Box
+shiftBox = liftA2 (\x (a, b) -> (a + x, b + x))
 
 -- | The dimension in which the box is the longest.
 longestDim :: Box -> Dim
@@ -153,3 +159,4 @@ data HitRecord = HitRecord
   , hr_frontSide :: Bool -- ^ Whether the ray hit the "front side" (for a closed surface, the outside).
   , hr_uv :: V2 Double -- ^ The texture coordinates of the intersection.
   }
+  deriving (Show)

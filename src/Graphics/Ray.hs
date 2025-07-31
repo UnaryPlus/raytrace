@@ -25,7 +25,7 @@ import Graphics.Ray.Material
 import Graphics.Ray.Texture
 import Graphics.Ray.Noise
 
-import Linear (V2(V2), V3(V3), (*^), (^*), normalize, cross, (^/), zero)
+import Linear (V2(V2), V3(V3), (*^), (^*), normalize, cross, (^/), zero, dot)
 import System.Random (StdGen, random, splitGen)
 import Data.Massiv.Array (B, D, S, U, Ix2((:.)), (!))
 import qualified Data.Massiv.Array as A
@@ -35,20 +35,36 @@ import qualified Graphics.Pixel.ColorSpace as C
 import Control.Monad.State (State, state, evalState)
 import Control.Monad (replicateM)
 import Data.Functor.Identity (Identity, runIdentity)
+import Data.Maybe (listToMaybe)
 
 data CameraSettings = CameraSettings
-  { cs_center :: Point3 -- ^ Camera position 
-  , cs_lookAt :: Point3 -- ^ Point for the camera to look at 
-  , cs_up :: Vec3 -- ^ Camera \"up\" vector 
-  , cs_vfov :: Double -- ^ Vertical field of view (in radians) 
-  , cs_aspectRatio :: Double -- ^ Width-to-height ratio of image 
-  , cs_imageWidth :: Int -- ^ Image width in pixels 
-  , cs_samplesPerPixel :: Int -- ^ Number of top-level rays created per pixel 
-  , cs_maxRecursionDepth :: Int -- ^ Number of times a ray can reflect before recursion stops 
-  , cs_background :: Ray -> Color -- ^ Background color (which can depend on direction) 
-  , cs_defocusAngle :: Double -- ^ If this is positive, the image will be somewhat blurry in the foreground and background, 
-                              -- with only a single plane in focus (like an image produced by a real camera)
-  , cs_focusDist :: Double -- ^ Distance from the camera to the plane of focus (only matters if defocus angle is nonzero) 
+  { cs_center :: Point3 
+    -- ^ Camera position 
+  , cs_lookAt :: Point3 
+    -- ^ Point for the camera to look at 
+  , cs_up :: Vec3 
+    -- ^ Camera \"up\" vector 
+  , cs_vfov :: Double 
+    -- ^ Vertical field of view (in radians) 
+  , cs_aspectRatio :: Double 
+    -- ^ Width-to-height ratio of image 
+  , cs_imageWidth :: Int 
+    -- ^ Image width in pixels 
+  , cs_samplesPerPixel :: Int 
+    -- ^ Number of top-level rays created per pixel 
+  , cs_maxRecursionDepth :: Int 
+    -- ^ Number of times a ray can reflect before recursion stops 
+  , cs_background :: Ray -> Color 
+    -- ^ Background color (which can depend on direction) 
+  , cs_defocusAngle :: Double 
+    -- ^ If this is positive, the image will be somewhat blurry in the foreground and background, 
+    -- with only a single plane in focus (like an image produced by a real camera)
+  , cs_focusDist :: Double 
+    -- ^ Distance from the camera to the plane of focus (only matters if defocus angle is nonzero) 
+  , cs_redirectTargets :: [(Double, Point3, Vec3, Vec3)] 
+    -- ^ List of parallelograms to send scattered rays toward (if the material allows it) along with 
+    -- probabilities, which should add up to less than 1. Sending more rays toward lights in 
+    -- scenes with small light sources can lead to faster convergence (i.e. less noise).
   }
 
 -- | By default, the camera is positioned at the origin looking in the negative z direction, with the positive y direction being upward
@@ -63,6 +79,7 @@ data CameraSettings = CameraSettings
 -- cs_background = const (V3 1 1 1)
 -- cs_defocusAngle = 0.0
 -- cs_focusDist = 10.0
+-- cs_redirectTargets = []
 -- @
 defaultCameraSettings :: CameraSettings
 defaultCameraSettings = CameraSettings
@@ -77,6 +94,7 @@ defaultCameraSettings = CameraSettings
   , cs_background = const (V3 1 1 1)
   , cs_defocusAngle = 0.0
   , cs_focusDist = 10.0
+  , cs_redirectTargets = []
   }
 
 class ToRandom m where
@@ -89,6 +107,15 @@ instance ToRandom Identity where
 instance ToRandom (State StdGen) where
   toRandom :: State StdGen a -> State StdGen a
   toRandom = id
+
+-- [private]
+data RedirectTarget = RedirectTarget
+  { rt_origin :: Point3
+  , rt_U :: Vec3
+  , rt_V :: Vec3
+  , rt_cross :: Vec3
+  , rt_hit :: Ray -> Maybe Double
+  }
 
 -- | Produce an image from the given camera settings, world, and seed.
 raytrace :: ToRandom m => CameraSettings -> Geometry m Material -> StdGen -> A.Matrix D Color
@@ -107,6 +134,21 @@ raytrace (CameraSettings {..}) (Geometry _ hitWorld) seed = let
   topLeft = cs_center - w ^* cs_focusDist - across ^/ 2 - down ^/ 2
   pixelU = across ^/ fromIntegral cs_imageWidth
   pixelV = down ^/ fromIntegral imageHeight
+
+  redirectTargets = flip map cs_redirectTargets $ \(_, q, s0, s1) -> RedirectTarget
+    { rt_origin = q
+    , rt_U = s0
+    , rt_V = s1
+    , rt_cross = cross s0 s1
+    , rt_hit = 
+        let Geometry _ hit = parallelogram q s0 s1 in
+        \ray -> fmap (hr_t . fst) (runIdentity (hit undefined ray (0, infinity)))
+    }
+
+  probs = map (\(p, _, _, _) -> p) cs_redirectTargets
+  remProb = 1 - sum probs
+  thresholds = zip redirectTargets (scanl1 (+) probs)
+  getTarget r = fmap fst (listToMaybe (dropWhile ((r >=) . snd) thresholds))
 
   defocusRadius = cs_focusDist * tan (cs_defocusAngle / 2)
   defocusDiskU = u ^* defocusRadius
@@ -127,24 +169,66 @@ raytrace (CameraSettings {..}) (Geometry _ hitWorld) seed = let
   getRay i j = do
     origin <- sampleDefocusDisk
     target <- samplePixel i j
-    pure (Ray origin (target - origin))
+    pure (Ray origin (normalize (target - origin)))
 
-  rayColor :: Int -> Ray -> State StdGen Color
-  rayColor depth ray
+  rayColor :: Int -> Double -> Ray -> State StdGen Color
+  rayColor depth time ray@(Ray _ rayDir)
     | depth <= 0 = pure zero
     | otherwise =
-    toRandom (hitWorld ray (0.0001, infinity)) >>= \case
+    toRandom (hitWorld time ray (0.0001, infinity)) >>= \case
       Nothing -> pure (cs_background ray)
-      Just (hit, Material mat) -> 
-        mat ray hit >>= \case
-          (emitted, Nothing) -> pure emitted
-          (emitted, Just (attenuation, ray')) -> do
-            c <- rayColor (depth - 1) ray'
-            pure (emitted + attenuation * c)
+      Just (hit, Material mat) -> do
+        let (emitted, genRes) = mat rayDir hit
+        res <- genRes
+        (emitted +) <$> case res of
+          Absorb -> pure zero
+          Scatter attenuation dir -> (attenuation *) <$> rayColor (depth - 1) time (Ray (hr_point hit) dir)
+
+          HemisphereF matF -> do
+            choice <- getTarget <$> state random
+            dir <- case choice of
+              Nothing -> do
+                uu <- randomUnitVector
+                pure (normalize (hr_normal hit + uu))
+              Just RedirectTarget {..} -> do
+                (i, j) <- state random
+                let lightPt = rt_origin + i *^ rt_U + j *^ rt_V
+                pure (normalize (lightPt - hr_point hit))
+            let pdf1 = dot dir (hr_normal hit) / pi
+            if pdf1 <= 0 then pure zero else do
+              let pdfs = flip map redirectTargets $ \RedirectTarget {..} ->
+                    case rt_hit (Ray (hr_point hit) dir) of
+                      Nothing -> 0
+                      Just t -> t * t / abs (dot rt_cross dir)
+              -- The pdf from which 'dir' was generated
+              let pdf = remProb * pdf1 + sum (zipWith (*) probs pdfs)
+              c <- rayColor (depth - 1) time (Ray (hr_point hit) dir)
+              pure (matF dir * c ^* (pdf1 / pdf))
+
+          SphereF matF -> do
+            choice <- getTarget <$> state random
+            dir <- case choice of
+              Nothing -> randomUnitVector
+              Just RedirectTarget {..} -> do
+                (i, j) <- state random
+                let lightPt = rt_origin + i *^ rt_U + j *^ rt_V
+                pure (normalize (lightPt - hr_point hit))
+            let pdf1 = 0.25 / pi
+            let pdfs = flip map redirectTargets $ \RedirectTarget {..} ->
+                  case rt_hit (Ray (hr_point hit) dir) of
+                    Nothing -> 0
+                    Just t -> t * t / abs (dot rt_cross dir)
+            -- The pdf from which 'dir' was generated
+            let pdf = remProb * pdf1 + sum (zipWith (*) probs pdfs) 
+            c <- rayColor (depth - 1) time (Ray (hr_point hit) dir)
+            pure (matF dir * c ^* (pdf1 / pdf))
   
   pixelColor :: Int -> Int -> State StdGen Color
   pixelColor i j = do
-    colors <- replicateM cs_samplesPerPixel (getRay i j >>= rayColor cs_maxRecursionDepth)
+    colors <- replicateM cs_samplesPerPixel $ do
+      time <- state random
+      ray <- getRay i j 
+      rayColor cs_maxRecursionDepth time ray
     pure (sum colors ^/ fromIntegral cs_samplesPerPixel)
 
   -- array of random seeds for each pixel (constructed using splitGen)
