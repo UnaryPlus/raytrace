@@ -26,7 +26,7 @@ The image above, with 405 million top-level rays, was generated on my laptop in 
 
 Here is an image demonstrating polygonal meshes and subsurface scattering:
 
-![Example](https://raw.githubusercontent.com/UnaryPlus/raytrace/refs/heads/main/pawn-demo.png)
+![Example](https://raw.githubusercontent.com/UnaryPlus/raytrace/refs/heads/main/pawn_demo.png)
 
 ## Example Code
 
