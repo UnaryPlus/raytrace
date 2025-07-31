@@ -38,7 +38,8 @@ data MaterialResult
 -- to use in the case of no redirection. 'anisotropic' and 'lommelSeeliger' could benefit from this. One issue is that it would require
 -- converting a single vector into an orthonormal basis.
 
--- | A material that emits light and does not scatter rays.
+-- TODO: rename to diffuseLight or similar?
+-- | A material that emits light equally in all directions and does not scatter rays.
 lightSource :: Texture -> Material
 lightSource (Texture tex) = Material $ \ _ HitRecord{..} -> (tex hr_point hr_uv, pure Absorb)
 
@@ -67,6 +68,7 @@ mirror (Texture tex) = Material $
   \dir (HitRecord {..}) -> 
     (zero, pure $ Scatter (tex hr_point hr_uv) (reflect hr_normal dir))
 
+-- TODO: make this more physically-based?
 -- | A metallic-looking material that reflects rays inexactly. The larger the first argument is, the less shiny
 -- the material. @'metal' 0@ behaves the same as 'mirror'.
 metal :: Double -> Texture -> Material

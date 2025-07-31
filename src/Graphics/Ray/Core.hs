@@ -69,7 +69,7 @@ randomInUnitDisk = do
     else randomInUnitDisk
 
 -- | A ray with an origin and a direction. Points on the ray @Ray orig dir@ are parametrized by @orig + t *^ dir@.
--- There is no expectation that the direction be a unit vector.
+-- There is no expectation that the direction be a unit vector, but this might change in a future version.
 data Ray = Ray Point3 Vec3
   deriving (Show)
 

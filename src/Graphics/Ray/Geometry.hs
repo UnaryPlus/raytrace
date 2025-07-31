@@ -190,8 +190,9 @@ transformVertices m (Mesh vs vts fs) =
   let vs' = A.compute (A.map (dropLast . (m !*) . V4.point) vs) in
   Mesh vs' vts fs
 
+-- TODO: use IO exceptions instead of Either?
 -- | Parse the .obj file at the given location.
-readObj :: FilePath -> IO (Either String Mesh) -- TODO: use IO exceptions instead of Either?
+readObj :: FilePath -> IO (Either String Mesh) 
 readObj path = first ((path ++ ", ") ++) . parseObj <$> readFile path
 
 -- | Parse a Wavefront .obj file.

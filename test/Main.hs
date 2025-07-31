@@ -325,7 +325,7 @@ pawnTest = let
   world mesh = 
     let pawn = triangleMesh mesh in group
       [ pureGeometry (dielectric 1.5 <$ pawn)
-      , isotropic (constantTexture (V3 1 0 0)) <$ constantMedium 20 pawn
+      , isotropic (constantTexture (V3 1 0 0)) <$ constantMedium 5 pawn
       ]
   settings = defaultCameraSettings 
     { cs_center = V3 0 3.75 5
@@ -386,4 +386,4 @@ demoTest :: IO ()
 demoTest = demo2 "test_image.png" 400 250 4
 
 main :: IO ()
-main = pawnTest -- demo2 "demo2_candidate.png" 800 1000 40
+main = pawnTest
