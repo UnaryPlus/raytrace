@@ -8,13 +8,12 @@ module Graphics.Ray.Material
 import Graphics.Ray.Core
 import Graphics.Ray.Texture
 
-import Linear (V3(V3), zero, normalize, dot, quadrance, (*^), norm)
+import Linear (V3(V3), zero, dot, quadrance, (*^), normalize)
 import System.Random (StdGen, random)
 import Control.Monad.State (State, state)
 
 -- | A material is a function that takes the details of a ray-surface intersection (specifically, the direction of the
--- ray, which might not be a unit vector, along with a 'HitRecord' object) and produces an emitted color as well as a
--- 'MaterialResult' (see below).
+-- ray, along with a 'HitRecord' object) and produces an emitted color as well as a 'MaterialResult' (see below).
 newtype Material = Material (Vec3 -> HitRecord -> (Color, State StdGen MaterialResult))
 
 -- | The ray tracer uses the 'MaterialResult' to compute the color from scattering, which is added to the color from
@@ -23,7 +22,7 @@ data MaterialResult
   = Absorb 
     -- ^ Do not create a new ray.
   | Scatter Color Vec3 
-    -- ^ Create a new ray in the given direction (which need not be a unit vector)
+    -- ^ Create a new ray in the given direction (which must be a unit vector)
     -- and multiply the result of recursively ray tracing the ray by the given color.
   | HemisphereF (Vec3 -> Color) 
     -- ^ Leave the task of computing a direction to the ray tracer (allowing it to send more rays toward light sources).
@@ -38,7 +37,6 @@ data MaterialResult
 -- to use in the case of no redirection. 'anisotropic' and 'lommelSeeliger' could benefit from this. One issue is that it would require
 -- converting a single vector into an orthonormal basis.
 
--- TODO: rename to diffuseLight or similar?
 -- | A material that emits light equally in all directions and does not scatter rays.
 lightSource :: Texture -> Material
 lightSource (Texture tex) = Material $ \ _ HitRecord{..} -> (tex hr_point hr_uv, pure Absorb)
@@ -58,7 +56,7 @@ lambertian (Texture tex) = Material $
 lommelSeeliger :: Texture -> Material
 lommelSeeliger (Texture tex) = Material $
   \inDir (HitRecord {..}) -> (zero,) $ pure $ HemisphereF $ \outDir -> let
-    mu0 = -(dot inDir hr_normal / norm inDir)
+    mu0 = -(dot inDir hr_normal)
     mu1 = dot outDir hr_normal
     in 0.25 / (mu0 + mu1) *^ tex hr_point hr_uv 
 
@@ -75,16 +73,16 @@ metal :: Double -> Texture -> Material
 metal fuzz (Texture tex) = Material $
   \dir (HitRecord {..}) -> (zero,) $ do
     u <- randomUnitVector
-    let dir' = normalize (reflect hr_normal dir) + (fuzz *^ u)
+    let dir' = reflect hr_normal dir + fuzz *^ u
     let scatter = dot dir' hr_normal > 0
-    pure (if scatter then Scatter (tex hr_point hr_uv) dir' else Absorb)
+    pure (if scatter then Scatter (tex hr_point hr_uv) (normalize dir') else Absorb)
 
 -- [private]
 refract :: Double -> Double -> Vec3 -> Vec3 -> Vec3 
 refract iorRatio cosTheta normal u = let
   perp = iorRatio *^ (u + cosTheta *^ normal) 
-  para = -(sqrt (abs (1 - quadrance perp)) *^ normal)
-  in perp + para
+  para = -(sqrt (abs (1 - quadrance perp)) *^ normal) -- NOTE: quadrance perp = (iorRatio * sinTheta)^2
+  in perp + para -- unit vector
 
 -- | A material that either reflects or refracts all incoming rays, like clear glass.
 -- The argument is the index of refraction relative to the surrounding medium.
@@ -92,8 +90,7 @@ dielectric :: Double -> Material
 dielectric ior = Material $
   \dir (HitRecord {..}) -> (zero,) $ do
     let iorRatio = if hr_frontSide then 1/ior else ior
-    let u = normalize dir
-    let cosTheta = min 1 (dot hr_normal (-u))
+    let cosTheta = min 1 (dot hr_normal (-dir))
     let sinTheta = sqrt (1 - cosTheta * cosTheta)
     let cannotRefract = iorRatio * sinTheta > 1
 
@@ -103,8 +100,8 @@ dielectric ior = Material $
     x <- state random
 
     let dir' = if cannotRefract || x < reflectance
-          then reflect hr_normal u
-          else refract iorRatio cosTheta hr_normal u
+          then reflect hr_normal dir
+          else refract iorRatio cosTheta hr_normal dir
     
     pure (Scatter (V3 1 1 1) dir')
 
@@ -127,6 +124,6 @@ isotropic (Texture tex) = Material $
 anisotropic :: Double -> Texture -> Material
 anisotropic g (Texture tex) = Material $
   \inDir (HitRecord {..}) -> (zero,) $ pure $ SphereF $ \outDir -> let
-    mu = dot inDir outDir / norm inDir
+    mu = dot inDir outDir
     hg = (1 - g*g) / (1 + g*g - 2*g*mu)**1.5 
     in hg *^ tex hr_point hr_uv

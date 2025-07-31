@@ -62,16 +62,15 @@ sphere center radius = let
 
   hitSphere _ (Ray orig dir) bounds = Identity $ do
     let oc = center - orig
-    let a = quadrance dir
     let h = dot dir oc 
     let c = quadrance oc - radius*radius
 
-    let discriminant = h*h - a*c
+    let discriminant = h*h - c
     guard (discriminant >= 0)
     
     let sqrtd = sqrt discriminant
-    let root1 = (h - sqrtd) / a
-    let root2 = (h + sqrtd) / a
+    let root1 = h - sqrtd
+    let root2 = h + sqrtd
 
     t <- 
       if inInterval bounds root1 
@@ -315,15 +314,14 @@ constantMedium density (Geometry bbox hitObj) = let
     of
       Nothing -> pure Nothing -- ray is never in fog within interval
       Just (t1, t2) -> state random <&> \rand ->
-         do let rayScale = norm dir
-            let inDist = (t2 - t1) * rayScale
+         do let inDist = t2 - t1
             let hitDist = negInvDensity * log rand
             guard (hitDist < inDist)
-            let t = t1 + hitDist / rayScale
+            let t = t1 + hitDist
             let hit = HitRecord
                   { hr_t = t
                   , hr_point = orig + t *^ dir
-                  , hr_normal = V3 0 0 1 -- arbitrary
+                  , hr_normal = -dir -- arbitrary
                   , hr_frontSide = True
                   , hr_uv = V2 0 0 -- arbitrary
                   }

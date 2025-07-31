@@ -68,14 +68,10 @@ randomInUnitDisk = do
     then pure vec
     else randomInUnitDisk
 
--- | A ray with an origin and a direction. Points on the ray @Ray orig dir@ are parametrized by @orig + t *^ dir@.
--- There is no expectation that the direction be a unit vector, but this might change in a future version.
+-- | A ray with an origin and a direction (which is always a unit vector). 
+-- Points on the ray @Ray orig dir@ are parametrized by @orig + t *^ dir@.
 data Ray = Ray Point3 Vec3
   deriving (Show)
-
--- NOTE: I might normalize all ray directions in a future version. This would probably speed up scenes with 
--- volumes somewhat. If I do this, I should search for all occurences of 'norm', 'quadrance', 'normalize',
--- and see if they are still necessary.
 
 -- | An interval with a lower bound and an upper bound.
 type Interval = (Double, Double)

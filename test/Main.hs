@@ -1,14 +1,13 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE PartialTypeSignatures #-}
-{-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TupleSections #-}
 module Main where
 
 import Graphics.Ray
 
-import Linear (V3(V3), (*^), normalize, norm, (!*!))
+import Linear (V3(V3), (*^), norm, (!*!))
 import System.Random (StdGen, newStdGen, randomR, random, mkStdGen)
 import Control.Monad.State (State, runState, state)
 import Control.Monad (forM, replicateM)
@@ -17,13 +16,13 @@ import Data.Functor.Identity (Identity)
 import Data.Either (fromRight)
 
 sky :: Ray -> Color
-sky (Ray _ (normalize -> V3 _ y _)) = 
+sky (Ray _ (V3 _ y _)) = 
   let a = 0.5 * (y + 1) in
   (1 - a) *^ V3 1 1 1 + a *^ V3 0.5 0.7 1
 
 grayFade :: Ray -> Color
 grayFade (Ray _ dir) = let
-  y = component Y dir / norm dir
+  y = component Y dir
   t = (y + 1) * 0.5
   in t *^ 1
 
@@ -316,7 +315,7 @@ demo2 path imageWidth samplesPerPixel maxRecursionDepth = let
 
   in do
     earth <- readImage "images/earthmap.jpg"
-    seed <- newStdGen
+    let seed = mkStdGen 1234
     let (world, seed') = runState (generateWorld earth) seed
     writeImageSqrt path (raytrace settings world seed')
 

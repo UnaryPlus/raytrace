@@ -169,7 +169,7 @@ raytrace (CameraSettings {..}) (Geometry _ hitWorld) seed = let
   getRay i j = do
     origin <- sampleDefocusDisk
     target <- samplePixel i j
-    pure (Ray origin (target - origin))
+    pure (Ray origin (normalize (target - origin)))
 
   rayColor :: Int -> Double -> Ray -> State StdGen Color
   rayColor depth time ray@(Ray _ rayDir)
