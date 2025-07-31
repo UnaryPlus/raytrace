@@ -77,15 +77,14 @@ data Ray = Ray Point3 Vec3
 -- volumes somewhat. If I do this, I should search for all occurences of 'norm', 'quadrance', 'normalize',
 -- and see if they are still necessary.
 
--- | An interval with a lower bound and an upper bound. 
--- Variously interpreted as a closed interval or an open interval; it doesn't really matter.
+-- | An interval with a lower bound and an upper bound.
 type Interval = (Double, Double)
 
 -- [private]
 size :: Interval -> Double
 size (a, b) = b - a
 
--- | Test whether a number is in the interval.
+-- | Test whether a number is in the interval (interpreted as an open interval).
 inInterval :: Interval -> Double -> Bool
 inInterval (tmin, tmax) t = tmin < t && t < tmax
 

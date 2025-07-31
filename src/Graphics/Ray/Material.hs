@@ -97,7 +97,7 @@ dielectric ior = Material $
 
     let r0 = (1 - iorRatio) / (1 + iorRatio)
     let r0' = r0 * r0
-    let reflectance = r0' + (1 - r0') * (1 - cosTheta)**5 -- Schlick approximation (TODO: check if this is correct)
+    let reflectance = r0' + (1 - r0') * (1 - cosTheta)**5 -- Schlick approximation
     x <- state random
 
     let dir' = if cannotRefract || x < reflectance
