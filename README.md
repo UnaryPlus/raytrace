@@ -70,8 +70,8 @@ For scenes with small light sources, the basic path tracing algorithm can result
 
 Here is an example using the [Cornell Box](https://en.wikipedia.org/wiki/Cornell_box). The first image was generated with `cs_redirectTargets = []` (the default), and the second with `cs_redirectTargets = [ (0.25, V3 343 554 332, V3 (-130) 0 0, V3 0 0 (-105)) ]`. (This means that 25% of scattered rays are sent toward a random point on the parallelogram defined by the three vectors, which happens to be the light source.) Both images were generated with the same number of samples per pixel (200), but the second image is much less noisy. It also took half as long to render due to rays terminating at the light sooner.
 
-![Cornell box without redirection](cornell_box_noisy.png)
+![Cornell box without redirection](https://raw.githubusercontent.com/UnaryPlus/raytrace/refs/heads/main/cornell_box_noisy.png)
 
-![Cornell box with redirection](cornell_box_redirect.png)
+![Cornell box with redirection](https://raw.githubusercontent.com/UnaryPlus/raytrace/refs/heads/main/cornell_box_redirect.png)
 
 Of course, the second image still has some noise, which could be reduced by increasing the number of samples per pixel.

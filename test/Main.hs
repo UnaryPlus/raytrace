@@ -4,6 +4,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TupleSections #-}
 module Main where
+-- TODO: add unit tests?
 
 import Graphics.Ray
 
